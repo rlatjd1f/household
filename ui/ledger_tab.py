@@ -181,15 +181,41 @@ class LedgerTab(QWidget):
         box = QFrame()
         box.setObjectName("ContentCard")
         vbox = QVBoxLayout(box)
+        
+        lbl_layout = QHBoxLayout()
         lbl = QLabel(title)
         lbl.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {'#d93025' if etype=='지출' else '#1a73e8'};")
+        
+        # Add Search/Filter Input
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("검색/필터...")
+        search_input.setFixedWidth(150)
+        search_input.setStyleSheet("font-size: 11px; padding: 4px;")
+        
+        lbl_layout.addWidget(lbl)
+        lbl_layout.addStretch()
+        lbl_layout.addWidget(search_input)
         
         table = LedgerSpreadsheet(self, etype, columns)
         if etype == "지출": self.expense_table = table
         else: self.income_table = table
         
+        search_input.textChanged.connect(lambda t: self.filter_table(table, t))
+        
         btns = QHBoxLayout()
         add_btn = QPushButton(f"+ {etype} 행 추가")
+...
+    def filter_table(self, table, text):
+        """Simple filter logic: hides rows that don't match the search text."""
+        for row in range(table.rowCount()):
+            match = False
+            for col in range(1, table.columnCount()):
+                val = table.get_val(row, col).lower()
+                if text.lower() in val:
+                    match = True
+                    break
+            table.setRowHidden(row, not match)
+        self.refresh_summary()
         add_btn.clicked.connect(lambda: self.add_row(table))
         del_btn = QPushButton("- 삭제")
         del_btn.setObjectName("DeleteBtn")
