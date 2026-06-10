@@ -114,7 +114,8 @@ QLineEdit, QSpinBox, QDateEdit, QComboBox {
     border-radius: 6px;
     padding: 8px 12px;
     color: #202124;
-    selection-background-color: #e8f0fe;
+    selection-background-color: #1a73e8;
+    selection-color: #ffffff;
 }
 
 QLineEdit:hover, QSpinBox:hover, QDateEdit:hover, QComboBox:hover {
@@ -123,7 +124,46 @@ QLineEdit:hover, QSpinBox:hover, QDateEdit:hover, QComboBox:hover {
 
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus {
     border: 2px solid #1a73e8;
-    padding: 7px 11px; /* Offset for border width change */
+    padding: 7px 11px;
+}
+
+/* Specific for QSpinBox/QDateEdit buttons */
+QSpinBox::up-button, QDateEdit::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #dadce0;
+    border-top-right-radius: 6px;
+    background: #f8f9fa;
+}
+
+QSpinBox::down-button, QDateEdit::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 20px;
+    border-left: 1px solid #dadce0;
+    border-bottom-right-radius: 6px;
+    background: #f8f9fa;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background: #f1f3f4;
+}
+
+QSpinBox::up-arrow, QDateEdit::up-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #5f6368;
+    width: 0; height: 0;
+}
+
+QSpinBox::down-arrow, QDateEdit::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #5f6368;
+    width: 0; height: 0;
 }
 
 /* ScrollBars */
