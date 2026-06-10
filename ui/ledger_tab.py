@@ -19,8 +19,9 @@ class DateDelegate(QStyledItemDelegate):
         date_str = index.data(Qt.ItemDataRole.EditRole) or index.data(Qt.ItemDataRole.DisplayRole)
         if date_str:
             editor.setDate(QDate.fromString(date_str, "yyyy-MM-dd"))
-        # Re-enforce 'Day' section focus after setting date
-        editor.setCurrentSection(QDateEdit.Section.DaySection)
+        
+        # Use a short timer to ensure the section is set AFTER the widget is shown/focused by the table
+        QTimer.singleShot(0, lambda: editor.setCurrentSection(QDateEdit.Section.DaySection))
 
     def setModelData(self, editor, model, index):
         model.setData(index, editor.date().toString("yyyy-MM-dd"), Qt.ItemDataRole.EditRole)
