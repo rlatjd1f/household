@@ -76,7 +76,16 @@ QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8ea
 QHeaderView::section:vertical { background-color: #ffffff; border-right: 2px solid #e8eaed; }
 QTableWidget QTableCornerButton::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; border-right: 2px solid #e8eaed; }
 
-QTableWidget, QTreeWidget { background-color: #ffffff; border: 1px solid #dadce0; gridline-color: #f1f3f4; selection-background-color: #e8f0fe; selection-color: #1a73e8; outline: none; border-radius: 8px; }
+QTableWidget, QTreeWidget { 
+    background-color: #ffffff; 
+    border: 1px solid #dadce0; 
+    gridline-color: #f1f3f4; 
+    selection-background-color: #e8f0fe; 
+    selection-color: #1a73e8; 
+    outline: none; 
+    border-radius: 8px; 
+}
+QTableWidget QWidget, QTreeWidget QWidget { background-color: #ffffff; }
 
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
@@ -122,7 +131,16 @@ QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c40
 QHeaderView::section:vertical { background-color: #2d2e30; border-right: 1px solid #3c4043; }
 QTableWidget QTableCornerButton::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; border-right: 2px solid #3c4043; }
 
-QTableWidget, QTreeWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; border-radius: 8px; }
+QTableWidget, QTreeWidget { 
+    background-color: #2d2e30; 
+    border: 1px solid #3c4043; 
+    gridline-color: #3c4043; 
+    selection-background-color: #3c4043; 
+    selection-color: #8ab4f8; 
+    outline: none; 
+    border-radius: 8px; 
+}
+QTableWidget QWidget, QTreeWidget QWidget { background-color: #2d2e30; }
 
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
@@ -147,11 +165,6 @@ QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px 
 QTabWidget::pane { border: 1px solid #3c4043; background: #2d2e30; }
 QTabBar::tab { color: #9aa0a6; }
 QTabBar::tab:selected { color: #8ab4f8; border-bottom: 2px solid #8ab4f8; }
-
-/* Dialogs */
-QMessageBox { background-color: #2d2e30; }
-QMessageBox QLabel { color: #e8eaed; font-size: 14px; }
-QMessageBox QPushButton { min-width: 80px; }
 """
 
 class MainWindow(QMainWindow):

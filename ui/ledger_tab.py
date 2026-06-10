@@ -6,18 +6,19 @@ from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry,
                       delete_ledger_entry, get_categories, get_assets)
 
 class LedgerSpreadsheet(QTableWidget):
-    """A reusable spreadsheet-style table for Income or Expense."""
-    def __init__(self, ledger_tab, entry_type):
-        super().__init__(0, 8)
+    """A highly customized spreadsheet table to match the user's layout."""
+    def __init__(self, ledger_tab, entry_type, columns):
+        super().__init__(0, len(columns) + 1) # +1 for hidden ID
         self.ledger_tab = ledger_tab
-        self.entry_type = entry_type # "수입" or "지출"
+        self.entry_type = entry_type
+        self.col_names = columns
         self.init_ui()
 
     def init_ui(self):
-        self.setHorizontalHeaderLabels(["ID", "날짜", "대분류", "중분류", "자산", "금액", "메모", ""])
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        headers = ["ID"] + self.col_names
+        self.setHorizontalHeaderLabels(headers)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.setColumnHidden(0, True) # Hide ID
-        self.setColumnHidden(7, True) # Placeholder for alignment
         self.itemChanged.connect(self.handle_item_changed)
 
     def handle_item_changed(self, item):
@@ -26,31 +27,57 @@ class LedgerSpreadsheet(QTableWidget):
         entry_id = int(id_item.text()) if id_item and id_item.text() else None
         
         try:
-            date = self.item(row, 1).text() if self.item(row, 1) else ""
-            parent = self.item(row, 2).text() if self.item(row, 2) else ""
-            sub = self.item(row, 3).text() if self.item(row, 3) else ""
-            asset_name = self.item(row, 4).text() if self.item(row, 4) else ""
-            amount_str = self.item(row, 5).text() if self.item(row, 5) else "0"
-            amount = int(amount_str.replace(',', ''))
-            memo = self.item(row, 6).text() if self.item(row, 6) else ""
-            
-            cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
-            asset_id = self.ledger_tab.resolve_asset_id(asset_name)
-            
-            if not cat_id or not asset_id: return
-
-            if entry_id:
-                update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo)
+            # Map columns based on entry_type
+            if self.entry_type == "지출":
+                # [소비날짜, 결제수단, 수단명, 대분류, 항목, 지출금액, 사용처, 코멘트]
+                date = self.get_text(row, 1)
+                pay_method = self.get_text(row, 2)
+                asset_name = self.get_text(row, 3)
+                parent = self.get_text(row, 4)
+                sub = self.get_text(row, 5)
+                amount = self.get_int(row, 6)
+                payee = self.get_text(row, 7)
+                memo = self.get_text(row, 8)
             else:
-                new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, "")
-                if new_id:
-                    self.blockSignals(True)
-                    self.setItem(row, 0, QTableWidgetItem(str(new_id)))
-                    self.blockSignals(False)
+                # [소득날짜, 대분류, 항목, 소득 금액, 소득처]
+                date = self.get_text(row, 1)
+                parent = self.get_text(row, 2)
+                sub = self.get_text(row, 3)
+                amount = self.get_int(row, 4)
+                payee = self.get_text(row, 5)
+                pay_method = ""
+                asset_name = ""
+                memo = ""
+
+            cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
+            asset_id = self.ledger_tab.resolve_asset_id(asset_name) if asset_name else None
+            
+            # For Income, if asset is not provided, we might need a default or allow NULL
+            # But based on DB, asset_id can be NULL if it's not a transfer
+            
+            if entry_id:
+                update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+            else:
+                # Add only if essential fields are present
+                if date and (cat_id or payee):
+                    new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                    if new_id:
+                        self.blockSignals(True)
+                        self.setItem(row, 0, QTableWidgetItem(str(new_id)))
+                        self.blockSignals(False)
             
             self.ledger_tab.refresh_summary()
         except Exception as e:
             print(f"Spreadsheet error ({self.entry_type}): {e}")
+
+    def get_text(self, row, col):
+        item = self.item(row, col)
+        return item.text().strip() if item else ""
+
+    def get_int(self, row, col):
+        text = self.get_text(row, col).replace(',', '')
+        try: return int(text)
+        except: return 0
 
 class LedgerTab(QWidget):
     def __init__(self, month):
@@ -63,65 +90,53 @@ class LedgerTab(QWidget):
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(20)
+        layout.setSpacing(15)
 
         # Summary Header
         self.summary_label = QLabel("수입: 0 | 지출: 0 | 잔액: 0")
         self.summary_label.setObjectName("SummaryLabel")
         layout.addWidget(self.summary_label)
 
-        # Container for side-by-side or stacked tables
         content_layout = QHBoxLayout()
         
-        # 1. Income Area
-        income_box = QFrame()
-        income_box.setObjectName("ContentCard")
-        income_vbox = QVBoxLayout(income_box)
-        income_title = QLabel("💰 수입 내역")
-        income_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #1a73e8;")
+        # 1. Consumption (Expense) Area - 8 Columns
+        exp_columns = ["소비날짜", "결제수단", "수단명", "대분류", "항목", "지출금액", "사용처", "코멘트"]
+        self.expense_box = self.create_section("💸 소비 내역 (지출)", "지출", exp_columns)
         
-        self.income_table = LedgerSpreadsheet(self, "수입")
-        
-        income_btns = QHBoxLayout()
-        add_inc = QPushButton("+ 수입 행 추가")
-        add_inc.clicked.connect(lambda: self.add_row(self.income_table))
-        del_inc = QPushButton("- 삭제")
-        del_inc.setObjectName("DeleteBtn")
-        del_inc.clicked.connect(lambda: self.delete_row(self.income_table))
-        income_btns.addWidget(add_inc)
-        income_btns.addWidget(del_inc)
-        income_btns.addStretch()
-        
-        income_vbox.addWidget(income_title)
-        income_vbox.addWidget(self.income_table)
-        income_vbox.addLayout(income_btns)
-        
-        # 2. Expense Area
-        expense_box = QFrame()
-        expense_box.setObjectName("ContentCard")
-        expense_vbox = QVBoxLayout(expense_box)
-        expense_title = QLabel("💸 지출 내역")
-        expense_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #d93025;")
-        
-        self.expense_table = LedgerSpreadsheet(self, "지출")
-        
-        expense_btns = QHBoxLayout()
-        add_exp = QPushButton("+ 지출 행 추가")
-        add_exp.clicked.connect(lambda: self.add_row(self.expense_table))
-        del_exp = QPushButton("- 삭제")
-        del_exp.setObjectName("DeleteBtn")
-        del_exp.clicked.connect(lambda: self.delete_row(self.expense_table))
-        expense_btns.addWidget(add_exp)
-        expense_btns.addWidget(del_exp)
-        expense_btns.addStretch()
-        
-        expense_vbox.addWidget(expense_title)
-        expense_vbox.addWidget(self.expense_table)
-        expense_vbox.addLayout(expense_btns)
+        # 2. Income Area - 5 Columns
+        inc_columns = ["소득날짜", "대분류", "항목", "소득 금액", "소득처"]
+        self.income_box = self.create_section("💰 소득 내역 (수입)", "수입", inc_columns)
 
-        content_layout.addWidget(income_box)
-        content_layout.addWidget(expense_box)
+        content_layout.addWidget(self.expense_box, 3) # More weight to expense
+        content_layout.addWidget(self.income_box, 2)
         layout.addLayout(content_layout)
+
+    def create_section(self, title, etype, columns):
+        box = QFrame()
+        box.setObjectName("ContentCard")
+        vbox = QVBoxLayout(box)
+        
+        lbl = QLabel(title)
+        lbl.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {'#d93025' if etype=='지출' else '#1a73e8'};")
+        
+        table = LedgerSpreadsheet(self, etype, columns)
+        if etype == "지출": self.expense_table = table
+        else: self.income_table = table
+        
+        btns = QHBoxLayout()
+        add_btn = QPushButton(f"+ {etype} 행 추가")
+        add_btn.clicked.connect(lambda: self.add_row(table))
+        del_btn = QPushButton("- 삭제")
+        del_btn.setObjectName("DeleteBtn")
+        del_btn.clicked.connect(lambda: self.delete_row(table))
+        btns.addWidget(add_btn)
+        btns.addWidget(del_btn)
+        btns.addStretch()
+        
+        vbox.addWidget(lbl)
+        vbox.addWidget(table)
+        vbox.addLayout(btns)
+        return box
 
     def refresh_data(self):
         self.income_table.blockSignals(True)
@@ -132,17 +147,19 @@ class LedgerTab(QWidget):
         self.expense_table.setRowCount(0)
         
         for e in entries:
-            table = self.income_table if e[2] == "수입" else self.expense_table
-            row = table.rowCount()
-            table.insertRow(row)
-            # id, date, parent, sub, asset, amount, memo
-            table.setItem(row, 0, QTableWidgetItem(str(e[0])))
-            table.setItem(row, 1, QTableWidgetItem(e[1]))
-            table.setItem(row, 2, QTableWidgetItem(e[7]))
-            table.setItem(row, 3, QTableWidgetItem(e[8]))
-            table.setItem(row, 4, QTableWidgetItem(e[9]))
-            table.setItem(row, 5, QTableWidgetItem(str(e[5])))
-            table.setItem(row, 6, QTableWidgetItem(e[6]))
+            # (id, date, type, cat_id, asset_id, amount, memo, payee, payment_method, parent, sub, asset_name)
+            if e[2] == "지출":
+                row = self.expense_table.rowCount()
+                self.expense_table.insertRow(row)
+                data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], str(e[5]), e[7], e[6]]
+                for i, val in enumerate(data):
+                    self.expense_table.setItem(row, i, QTableWidgetItem(val or ""))
+            else:
+                row = self.income_table.rowCount()
+                self.income_table.insertRow(row)
+                data = [str(e[0]), e[1], e[9], e[10], str(e[5]), e[7]]
+                for i, val in enumerate(data):
+                    self.income_table.setItem(row, i, QTableWidgetItem(val or ""))
 
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
@@ -153,7 +170,9 @@ class LedgerTab(QWidget):
         row = table.rowCount()
         table.insertRow(row)
         table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
-        table.setItem(row, 5, QTableWidgetItem("0"))
+        # Fill zeros for amount column
+        amt_col = 6 if table.entry_type == "지출" else 4
+        table.setItem(row, amt_col, QTableWidgetItem("0"))
         table.scrollToBottom()
         table.blockSignals(False)
 
@@ -167,17 +186,17 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def refresh_summary(self):
-        def sum_table(table):
+        def sum_table(table, col):
             total = 0
             for r in range(table.rowCount()):
-                item = table.item(r, 5)
+                item = table.item(r, col)
                 if item:
                     try: total += int(item.text().replace(',', ''))
                     except: pass
             return total
         
-        inc = sum_table(self.income_table)
-        exp = sum_table(self.expense_table)
+        exp = sum_table(self.expense_table, 6)
+        inc = sum_table(self.income_table, 4)
         self.summary_label.setText(f"수입: {inc:,} | 지출: {exp:,} | 잔액: {inc - exp:,}")
 
     def resolve_category_id(self, etype, parent, sub):
