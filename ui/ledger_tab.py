@@ -353,13 +353,27 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def refresh_summary(self):
+        from database import get_detailed_budgets
+        
+        # 1. Fetch Monthly Budget for the current month
+        budget_data = get_detailed_budgets(self.year)
+        monthly_total_budget = 0
+        for cat_data in budget_data.values():
+            monthly_total_budget += cat_data.get(self.month, 0)
+
         def sum_table(table, col):
             total = 0
             for r in range(table.rowCount()):
-                if not table.isRowHidden(r): total += table.get_int(r, col)
+                if not table.isRowHidden(r):
+                    total += table.get_int(r, col)
             return total
-        exp = sum_table(self.expense_table, 6); inc = sum_table(self.income_table, 4)
-        self.summary_label.setText(f"수입: {inc:,} | 지출: {exp:,} | 잔액: {inc - exp:,}")
+            
+        exp = sum_table(self.expense_table, 6)
+        remaining = monthly_total_budget - exp
+        
+        self.summary_label.setText(
+            f"월 예산: {monthly_total_budget:,} | 지출: {exp:,} | 남은 예산: {remaining:,}"
+        )
 
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"
