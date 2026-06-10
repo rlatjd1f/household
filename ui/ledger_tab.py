@@ -48,12 +48,11 @@ class StyledComboBox(QComboBox):
             super().keyPressEvent(event)
 
 class LedgerSpreadsheet(QTableWidget):
-    """A highly customized spreadsheet table with manual save button."""
+    """A highly customized spreadsheet table with dynamic dropdowns and manual save."""
     def __init__(self, ledger_tab, entry_type, columns):
-        # Add "저장" column to the end
         self.base_cols = columns
         display_cols = columns + ["저장"]
-        super().__init__(0, len(display_cols) + 1) # +1 for hidden ID
+        super().__init__(0, len(display_cols) + 1)
         self.ledger_tab = ledger_tab
         self.entry_type = entry_type
         self.init_ui(display_cols)
@@ -62,20 +61,14 @@ class LedgerSpreadsheet(QTableWidget):
         headers = ["ID"] + display_cols
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        
-        # UI Polish: Default to Stretch for most columns
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
-        # FIXED WIDTH for Date (Index 1)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.setColumnWidth(1, 100)
+        self.setColumnWidth(1, 120)
         
-        # FIXED WIDTH for Amount (Expense: 6, Income: 4)
         amt_col = 6 if self.entry_type == "지출" else 4
         self.horizontalHeader().setSectionResizeMode(amt_col, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(amt_col, 120)
 
-        # FIXED WIDTH for Save Button (Last Column)
         save_col = self.columnCount() - 1
         self.horizontalHeader().setSectionResizeMode(save_col, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(save_col, 60)
@@ -85,10 +78,8 @@ class LedgerSpreadsheet(QTableWidget):
         self.setColumnHidden(0, True)
         self.setSortingEnabled(True)
 
-        # Apply Date Delegate for the Date column (Index 1)
         self.date_delegate = DateDelegate(self)
         self.setItemDelegateForColumn(1, self.date_delegate)
-        
         self.itemChanged.connect(self.handle_item_changed)
 
     def handle_item_changed(self, item):
@@ -96,7 +87,6 @@ class LedgerSpreadsheet(QTableWidget):
         row = item.row()
         col = item.column()
         
-        # Auto-format commas for amount column
         amt_col = 6 if self.entry_type == "지출" else 4
         if col == amt_col:
             self.blockSignals(True)
@@ -107,7 +97,18 @@ class LedgerSpreadsheet(QTableWidget):
                 item.setText("0")
             self.blockSignals(False)
 
+        # Mark row as modified
+        self.set_save_status(row, False)
+
+    def set_save_status(self, row, is_saved):
+        save_col = self.columnCount() - 1
+        btn = self.cellWidget(row, save_col)
+        if isinstance(btn, QPushButton):
+            btn.setText("✅" if is_saved else "❓")
+
     def save_row_to_db(self, row):
+        if self.signalsBlocked() or row < 0 or row >= self.rowCount(): return
+        
         # Block sorting during save/ID update
         sorting_was_enabled = self.isSortingEnabled()
         self.setSortingEnabled(False)
@@ -148,8 +149,8 @@ class LedgerSpreadsheet(QTableWidget):
                         self.setItem(row, 0, QTableWidgetItem(str(new_id)))
                         self.blockSignals(False)
             
+            self.set_save_status(row, True)
             self.ledger_tab.refresh_summary()
-            # Show visual feedback (optional)
         except Exception as e:
             print(f"DEBUG Save error: {e}")
         finally:
@@ -236,7 +237,7 @@ class LedgerTab(QWidget):
     def filter_table(self, table, text):
         for row in range(table.rowCount()):
             match = False
-            for col in range(1, table.columnCount() - 1): # Exclude save column
+            for col in range(1, table.columnCount() - 1):
                 val = table.get_val(row, col).lower()
                 if text.lower() in val:
                     match = True
@@ -261,14 +262,14 @@ class LedgerTab(QWidget):
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], amt_formatted, e[7], e[6]]
                 for i, val in enumerate(data): self.set_table_item(self.expense_table, row, i, val)
-                self.add_save_button(self.expense_table, row)
+                self.add_save_button(self.expense_table, row, True)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
                 for i, val in enumerate(data): self.set_table_item(self.income_table, row, i, val)
-                self.add_save_button(self.income_table, row)
+                self.add_save_button(self.income_table, row, True)
                 
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
@@ -294,15 +295,14 @@ class LedgerTab(QWidget):
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
             
-            # Cascading logic with row-aware mapping
             if etype == "지출":
                 if col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "수단명", t))
                 elif col == 4: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
-                else: combo.currentTextChanged.connect(lambda t, r=row, c=col, tbl=table: self.handle_combo_change(tbl, r, c, None, None, t))
+                else: combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
             elif etype == "수입" and col == 2: 
                 combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "소득_중", t))
             else:
-                combo.currentTextChanged.connect(lambda t, r=row, c=col, tbl=table: self.handle_combo_change(tbl, r, c, None, None, t))
+                combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
             
             table.setCellWidget(row, col, combo)
         elif col == amt_col:
@@ -310,20 +310,23 @@ class LedgerTab(QWidget):
         else:
             table.setItem(row, col, QTableWidgetItem(val or ""))
 
-    def add_save_button(self, table, row):
+    def add_save_button(self, table, row, is_saved=True):
         save_col = table.columnCount() - 1
-        btn = QPushButton("✅")
-        btn.setStyleSheet("font-size: 14px; padding: 2px; border: none; background: transparent;")
-        # Manual Save Trigger
-        btn.clicked.connect(lambda: table.save_row_to_db(row))
-        # Ensure row-awareness is preserved even after sorting
+        btn = QPushButton("✅" if is_saved else "❓")
+        btn.setObjectName("SaveBtn")
+        # Ensure row is found dynamically for sorting compatibility
+        btn.clicked.connect(lambda: table.save_row_to_db(table.indexAt(btn.pos()).row()))
         table.setCellWidget(row, save_col, btn)
 
     def handle_combo_change(self, table, row, col, child_col, ctype, text):
-        item = table.item(row, col)
+        # We must find the visual row again because sorting might have happened
+        visual_row = table.indexAt(table.sender().pos()).row()
+        item = table.item(visual_row, col)
         if item: item.setText(text)
+        
+        table.set_save_status(visual_row, False)
         if child_col is not None:
-            self.refresh_child_combo(table, row, child_col, ctype, text)
+            self.refresh_child_combo(table, visual_row, child_col, ctype, text)
 
     def refresh_child_combo(self, table, row, child_col, ctype, parent_val):
         child_combo = table.cellWidget(row, child_col)
@@ -369,7 +372,7 @@ class LedgerTab(QWidget):
             dv = "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else ""
             self.set_table_item(table, row, col, dv)
         
-        self.add_save_button(table, row)
+        self.add_save_button(table, row, False) # New row is unsaved
         table.scrollToBottom()
         table.blockSignals(False)
         table.setSortingEnabled(True)

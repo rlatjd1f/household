@@ -40,6 +40,21 @@ QPushButton { background-color: #1a73e8; color: white; border: 1px solid #1a73e8
 QPushButton:hover { background-color: #1765cc; }
 QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
 QPushButton#DeleteBtn:hover { background-color: #e8eaed; }
+
+QPushButton#SaveBtn {
+    font-size: 16px;
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+QPushButton#SaveBtn:hover {
+    background-color: #f1f3f4;
+    border-radius: 15px;
+}
+QPushButton#SaveBtn:pressed {
+    padding-top: 4px; /* Animation effect */
+    background-color: #e8eaed;
+}
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; }
 QComboBox { padding: 2px 25px 2px 10px; min-height: 28px; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #dadce0; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #f1f3f4; }
@@ -72,6 +87,21 @@ QPushButton { background-color: #8ab4f8; color: #202124; border: 1px solid #8ab4
 QPushButton:hover { background-color: #aecbfa; }
 QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
 QPushButton#DeleteBtn:hover { background-color: #4d4d4d; }
+
+QPushButton#SaveBtn {
+    font-size: 16px;
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+QPushButton#SaveBtn:hover {
+    background-color: #3c4043;
+    border-radius: 15px;
+}
+QPushButton#SaveBtn:pressed {
+    padding-top: 4px; /* Animation effect */
+    background-color: #4d4d4d;
+}
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
 QComboBox { padding: 2px 25px 2px 10px; min-height: 28px; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #5f6368; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #35363a; }
@@ -112,12 +142,12 @@ class MainWindow(QMainWindow):
         btn_row.setContentsMargins(10, 0, 10, 0)
         self.theme_btn = QPushButton("🌙 테마")
         self.theme_btn.setFlat(True)
-        self.theme_btn.setStyleSheet("font-size: 12px; padding: 8px;")
+        self.theme_btn.setStyleSheet("font-size: 13px; padding: 10px; font-weight: bold;")
         self.theme_btn.clicked.connect(self.toggle_theme)
         
         self.import_btn = QPushButton("📂 엑셀 임포트")
         self.import_btn.setFlat(True)
-        self.import_btn.setStyleSheet("font-size: 12px; padding: 8px; color: #1a73e8;")
+        self.import_btn.setStyleSheet("font-size: 13px; padding: 10px; font-weight: bold;")
         self.import_btn.clicked.connect(self.handle_excel_import)
         
         btn_row.addWidget(self.theme_btn)
