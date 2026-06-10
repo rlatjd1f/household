@@ -18,8 +18,14 @@ class LedgerSpreadsheet(QTableWidget):
         headers = ["ID"] + self.col_names
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.verticalHeader().setDefaultSectionSize(45) # Increased row height to fix clipping
+        
+        # UI Polish: Use Stretch to fill entire width
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # Specific overrides for narrow columns
+        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Date
+        
+        self.verticalHeader().setDefaultSectionSize(45) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
         self.setSortingEnabled(True)
