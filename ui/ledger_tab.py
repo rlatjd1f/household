@@ -67,7 +67,19 @@ class LedgerSpreadsheet(QTableWidget):
         headers = ["ID"] + self.col_names
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
+        
+        # UI Polish: Default to Stretch for most columns
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # 1. FIXED WIDTH for Date (Index 1) - Ensures YYYY-MM-DD visibility
+        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.setColumnWidth(1, 100)
+        
+        # 2. FIXED WIDTH for Amount (Expense: Index 6, Income: Index 4)
+        amt_col = 6 if self.entry_type == "지출" else 4
+        self.horizontalHeader().setSectionResizeMode(amt_col, QHeaderView.ResizeMode.Fixed)
+        self.setColumnWidth(amt_col, 120)
+        
         self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
