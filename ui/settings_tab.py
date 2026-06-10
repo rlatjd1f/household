@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, 
                              QTreeWidgetItem, QLineEdit, QPushButton, QLabel, 
                              QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout, QMenu)
-from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtCore import Qt, QPoint, QSize
+from PyQt6.QtGui import QColor
 from database import (add_category, get_categories, delete_category, 
                       delete_category_by_parent, update_category_parent_name, update_category_sub_name)
 
@@ -17,6 +18,8 @@ class CategorySection(QFrame):
         self.setStyleSheet("""
             CategorySection { border-radius: 12px; }
             QLabel#SectionTitle { font-weight: 600; font-size: 16px; padding: 10px 5px; }
+            QTreeWidget { padding: 6px; }
+            QTreeWidget::item { padding: 4px 6px; border-radius: 6px; }
         """)
         self.init_ui()
 
@@ -33,7 +36,7 @@ class CategorySection(QFrame):
         # Tree Widget (Hierarchical)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True) 
-        self.tree.setIndentation(20)
+        self.tree.setIndentation(24)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.tree.itemClicked.connect(self.handle_selection_changed)
         
@@ -70,6 +73,10 @@ class CategorySection(QFrame):
         input_layout.addWidget(self.add_btn)
         input_layout.addWidget(del_btn)
         layout.addLayout(input_layout)
+
+    def is_dark(self):
+        from PyQt6.QtWidgets import QApplication
+        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
 
     def show_context_menu(self, position: QPoint):
         item = self.tree.itemAt(position)
@@ -131,6 +138,9 @@ class CategorySection(QFrame):
         for parent_name, subs in sorted(grouped.items()):
             parent_item = QTreeWidgetItem(self.tree, [f"📂 {parent_name}"])
             parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "parent", "name": parent_name})
+            parent_item.setSizeHint(0, QSize(0, 34))
+            parent_item.setBackground(0, QColor("#e8f0fe") if not self.is_dark() else QColor("#303f56"))
+            parent_item.setForeground(0, QColor("#174ea6") if not self.is_dark() else QColor("#aecbfa"))
             font = parent_item.font(0)
             font.setBold(True)
             parent_item.setFont(0, font)
@@ -138,6 +148,8 @@ class CategorySection(QFrame):
             for sub in sorted(subs, key=lambda x: x[3]):
                 sub_item = QTreeWidgetItem(parent_item, [f"└ {sub[3]}"])
                 sub_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "sub", "id": sub[0], "parent": parent_name, "name": sub[3]})
+                sub_item.setSizeHint(0, QSize(0, 26))
+                sub_item.setForeground(0, QColor("#3c4043") if not self.is_dark() else QColor("#d2d5d9"))
             
             parent_item.setExpanded(True)
         
