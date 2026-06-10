@@ -1,11 +1,71 @@
 import openpyxl
+import re
+from datetime import date, datetime
 from database import (add_category, save_detailed_budget, add_asset, 
                       add_ledger_entry, clear_household_data, get_db_connection)
 from PyQt6.QtWidgets import QMessageBox
 
+def to_int(value):
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(str(value).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return None
+
+def parse_excel_date(value, year, fallback_month=None):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    iso_match = re.search(r"(\d{4})[-./](\d{1,2})[-./](\d{1,2})", text)
+    if iso_match:
+        y, m, d = map(int, iso_match.groups())
+        return f"{y:04d}-{m:02d}-{d:02d}"
+
+    month_day_match = re.search(r"(\d{1,2})\s*[./]\s*(\d{1,2})", text)
+    if month_day_match:
+        m, d = map(int, month_day_match.groups())
+        return f"{year:04d}-{m:02d}-{d:02d}"
+
+    day_match = re.fullmatch(r"\d{1,2}", text)
+    if day_match and fallback_month:
+        return f"{year:04d}-{fallback_month:02d}-{int(text):02d}"
+
+    return text
+
+def get_import_year(wb):
+    if "설정하기" not in wb.sheetnames:
+        return datetime.now().year
+
+    sheet = wb["설정하기"]
+    for row in sheet.iter_rows(values_only=True):
+        for idx, value in enumerate(row):
+            if value == "연도 설정":
+                for next_value in row[idx + 1:]:
+                    year = to_int(next_value)
+                    if year:
+                        return year
+    return datetime.now().year
+
+def find_header_row(sheet):
+    for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+        values = [str(value).strip() if value is not None else "" for value in row]
+        if "소비날짜" in values and "소득날짜" in values:
+            return row_idx, values
+    return None, []
+
 def import_from_excel(hid, file_path, parent_widget):
     try:
         wb = openpyxl.load_workbook(file_path, data_only=True)
+        import_year = get_import_year(wb)
         
         reply = QMessageBox.question(
             parent_widget, "데이터 이관 확인",
@@ -46,13 +106,21 @@ def import_from_excel(hid, file_path, parent_widget):
                     month = int(ms.replace("월", ""))
                     for i, amt in enumerate(row[2:]):
                         if i + 2 < len(headers) and amt:
-                            save_detailed_budget(hid, 2026, month, headers[i+2], int(amt))
+                            save_detailed_budget(hid, import_year, month, headers[i+2], int(amt))
 
         # 4. Assets
         if '자산 관리' in wb.sheetnames:
             sheet = wb['자산 관리']
             for row in sheet.iter_rows(min_row=1, values_only=True):
-                if row[1] == "자본금" and row[2]: add_asset(hid, "자본금", int(row[2]))
+                values = list(row)
+                for idx, value in enumerate(values):
+                    if value == "자본금":
+                        for next_value in values[idx + 1:]:
+                            amount = to_int(next_value)
+                            if amount is not None:
+                                add_asset(hid, "자본금", amount)
+                                break
+                        break
 
         # 5. Ledger
         cat_map = {}
@@ -65,19 +133,35 @@ def import_from_excel(hid, file_path, parent_widget):
             sheet_name = f"{month}월"
             if sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
-                for row in sheet.iter_rows(min_row=4, values_only=True):
-                    if row[0] and row[5]:
-                        dv = row[0]; ds = dv if isinstance(dv, str) else dv.strftime("%Y-%m-%d")
-                        pm = str(row[1]) if row[1] else ""; an = str(row[2]) if row[2] else ""
-                        p = str(row[3]) if row[3] else ""; s = str(row[4]) if row[4] else ""
+                header_row, headers = find_header_row(sheet)
+                if not header_row:
+                    continue
+                expense_start = headers.index("소비날짜")
+                income_start = headers.index("소득날짜")
+
+                for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
+                    expense_amount = to_int(row[expense_start + 5] if len(row) > expense_start + 5 else None)
+                    if len(row) > expense_start and row[expense_start] and expense_amount:
+                        ds = parse_excel_date(row[expense_start], import_year, month)
+                        pm = str(row[expense_start + 1]).strip() if len(row) > expense_start + 1 and row[expense_start + 1] else ""
+                        an = str(row[expense_start + 2]).strip() if len(row) > expense_start + 2 and row[expense_start + 2] else ""
+                        p = str(row[expense_start + 3]).strip() if len(row) > expense_start + 3 and row[expense_start + 3] else ""
+                        s = str(row[expense_start + 4]).strip() if len(row) > expense_start + 4 and row[expense_start + 4] else ""
+                        payee = str(row[expense_start + 6]).strip() if len(row) > expense_start + 6 and row[expense_start + 6] else ""
+                        memo = str(row[expense_start + 7]).strip() if len(row) > expense_start + 7 and row[expense_start + 7] else ""
                         cat_id = cat_map.get(("소비", p, s))
                         asset_id = cat_map.get(("결제수단", pm, an))
-                        add_ledger_entry(hid, ds, "지출", cat_id, asset_id, int(row[5]), str(row[7]) if row[7] else "", str(row[6]) if row[6] else "", pm)
-                    if row[9] and row[12]:
-                        dv = row[9]; ds = dv if isinstance(dv, str) else dv.strftime("%Y-%m-%d")
-                        p = str(row[10]) if row[10] else ""; s = str(row[11]) if row[11] else ""
+                        add_ledger_entry(hid, ds, "지출", cat_id, asset_id, expense_amount, memo, payee, pm)
+
+                    income_amount = to_int(row[income_start + 3] if len(row) > income_start + 3 else None)
+                    if len(row) > income_start and row[income_start] and income_amount:
+                        ds = parse_excel_date(row[income_start], import_year, month)
+                        p = str(row[income_start + 1]).strip() if len(row) > income_start + 1 and row[income_start + 1] else ""
+                        s = str(row[income_start + 2]).strip() if len(row) > income_start + 2 and row[income_start + 2] else ""
+                        payee = str(row[income_start + 4]).strip() if len(row) > income_start + 4 and row[income_start + 4] else ""
+                        memo = str(row[income_start + 5]).strip() if len(row) > income_start + 5 and row[income_start + 5] else ""
                         cat_id = cat_map.get(("소득", p, s))
-                        add_ledger_entry(hid, ds, "수입", cat_id, None, str(row[14]) if row[14] else "", str(row[13]) if row[13] else "", "")
+                        add_ledger_entry(hid, ds, "수입", cat_id, None, income_amount, memo, payee, "")
 
         QMessageBox.information(parent_widget, "완료", "엑셀 데이터 이관이 성공적으로 완료되었습니다.")
         return True
