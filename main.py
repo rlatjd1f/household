@@ -328,26 +328,22 @@ class MainWindow(QMainWindow):
         self.sidebar.addItem(QListWidgetItem("📊  예산 설정")) # Row 1
         self.sidebar.addItem(QListWidgetItem("💰  자산 설정")) # Row 2
         
-        # Spacer
-        spacer = QListWidgetItem("")
-        spacer.setFlags(Qt.ItemFlag.NoItemFlags)
-        self.sidebar.addItem(spacer) # Row 3
-        
-        # 2. Months 1-12: Simple Labels
+        # 2. Monthly Ledger Header
         ledger_header = QListWidgetItem("📅  월별 가계부")
         ledger_header.setFlags(Qt.ItemFlag.NoItemFlags) # Non-selectable
-        self.sidebar.addItem(ledger_header)
+        self.sidebar.addItem(ledger_header) # Row 3
 
+        # 3. Months 1-12
         for i in range(1, 13):
             item = QListWidgetItem(f"      {i}월")
-            self.sidebar.addItem(item)
+            self.sidebar.addItem(item) # Row 4-15
 
     def handle_navigation(self, row):
         target_index = -1
         if 0 <= row <= 2: 
             target_index = row
-        elif 5 <= row <= 16: # Row 4 is Header, 5-16 are Jan-Dec
-            target_index = 3 + (row - 5)
+        elif 4 <= row <= 15: # Row 3 is Header, 4-15 are Jan-Dec
+            target_index = 3 + (row - 4)
             
         if target_index != -1:
             self.content_stack.setCurrentIndex(target_index)

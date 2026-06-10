@@ -1,9 +1,26 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
-                             QHeaderView, QFrame, QComboBox)
-from PyQt6.QtCore import Qt, QTimer
+                             QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate)
+from PyQt6.QtCore import Qt, QTimer, QDate
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry, 
                       delete_ledger_entry, get_categories, get_assets)
+
+class DateDelegate(QStyledItemDelegate):
+    """Delegate that uses QDateEdit with Up/Down adjustment for Date cells."""
+    def createEditor(self, parent, option, index):
+        editor = QDateEdit(parent)
+        editor.setDisplayFormat("yyyy-MM-dd")
+        editor.setCalendarPopup(True)
+        # QDateEdit natively supports Up/Down arrow adjustment for parts of the date
+        return editor
+
+    def setEditorData(self, editor, index):
+        date_str = index.data(Qt.ItemDataRole.EditRole) or index.data(Qt.ItemDataRole.DisplayRole)
+        if date_str:
+            editor.setDate(QDate.fromString(date_str, "yyyy-MM-dd"))
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.date().toString("yyyy-MM-dd"), Qt.ItemDataRole.EditRole)
 
 class StyledComboBox(QComboBox):
     """Enhanced ComboBox with stable events for spreadsheet use."""
@@ -44,8 +61,12 @@ class LedgerSpreadsheet(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
         
-        # Disable automatic sorting during data entry to prevent "row jumping"
+        # Disable automatic sorting during data entry
         self.setSortingEnabled(False)
+        
+        # Apply Date Delegate for the Date column (Index 1)
+        self.date_delegate = DateDelegate(self)
+        self.setItemDelegateForColumn(1, self.date_delegate)
         
         # itemChanged is stable for text cells
         self.itemChanged.connect(self.handle_item_changed)
@@ -85,11 +106,14 @@ class LedgerSpreadsheet(QTableWidget):
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
             asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
             
-            has_data = cat_id or amount > 0 or payee or asset_id
+            # More lenient save condition
+            has_data = cat_id or amount > 0 or payee or memo or asset_id
             
             if entry_id:
+                print(f"DEBUG: Updating entry {entry_id}...")
                 update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             elif date and has_data:
+                print(f"DEBUG: Creating new entry for row {row}...")
                 new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
                 if new_id:
                     self.blockSignals(True)
@@ -208,7 +232,6 @@ class LedgerTab(QWidget):
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
             
-            # Intelligent Cascading Logic (Triggered on text change but handled by save_row_to_db)
             if etype == "지출":
                 if col == 2: 
                     combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 3, "수단명", t))
@@ -234,9 +257,8 @@ class LedgerTab(QWidget):
             elif ctype == "소득_중":
                 items = [c[3] for c in get_categories("소득") if c[2] == parent_val]
             else: items = []
-            
             child_combo.addItems(items)
-            child_combo.setCurrentIndex(-1) # Prevent automatic first item selection
+            child_combo.setCurrentIndex(-1)
             child_combo.blockSignals(False)
 
     def populate_combo(self, combo, ctype, table, row, col):
@@ -263,7 +285,7 @@ class LedgerTab(QWidget):
         table.blockSignals(True)
         row = table.rowCount()
         table.insertRow(row)
-        table.setItem(row, 0, QTableWidgetItem("")) # Essential to ensure ID column exists
+        table.setItem(row, 0, QTableWidgetItem(""))
         table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
         for col in range(2, table.columnCount()):
             self.set_table_item(table, row, col, "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else "")
@@ -298,16 +320,9 @@ class LedgerTab(QWidget):
         return None
 
     def resolve_asset_id(self, etype, pay_method, asset_name):
-        from database import get_categories, get_assets
+        from database import get_categories
         if etype == "지출":
-            # For 지출, we look for categories of type '결제수단'
             categories = get_categories("결제수단")
             for c in categories:
-                if c[2] == pay_method and c[3] == asset_name:
-                    return c[0]
-        else:
-            # For 수입, it currently uses assets table (if needed)
-            assets = get_assets()
-            for a in assets:
-                if a[1] == asset_name: return a[0]
+                if c[2] == pay_method and c[3] == asset_name: return c[0]
         return None
