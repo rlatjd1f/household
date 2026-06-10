@@ -1,10 +1,10 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
-                             QLabel, QPushButton)
+                             QLabel, QPushButton, QInputDialog, QMessageBox, QFrame)
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
-from database import init_db
+from database import init_db, get_households, add_household, delete_household, update_household_name
 from ui.settings_tab import SettingsTab
 from ui.budget_tab import BudgetTab
 from ui.asset_tab import AssetTab
@@ -31,37 +31,20 @@ QListWidget::item:selected { background-color: #e8f0fe; color: #1a73e8; }
 QListWidget::item:hover:!selected { background-color: #f1f3f4; }
 QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; color: #5f6368; }
 QHeaderView::section:vertical { background-color: #ffffff; border-right: 2px solid #e8eaed; }
-QTableWidget QTableCornerButton::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; border-right: 2px solid #e8eaed; }
 QTableWidget, QTreeWidget { background-color: #ffffff; border: 1px solid #dadce0; gridline-color: #f1f3f4; selection-background-color: #e8f0fe; selection-color: #1a73e8; outline: none; border-radius: 8px; }
 QTableWidget QWidget, QTreeWidget QWidget { background-color: #ffffff; }
-QFrame[frameShape="5"] { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
+QFrame[frameShape="5"], #ContentCard { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
 QLabel#SummaryLabel { font-weight: 600; font-size: 15px; background-color: #ffffff; border: 1px solid #dadce0; border-radius: 8px; padding: 10px 15px; }
 QPushButton { background-color: #1a73e8; color: white; border: 1px solid #1a73e8; }
 QPushButton:hover { background-color: #1765cc; }
 QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
-QPushButton#DeleteBtn:hover { background-color: #e8eaed; }
-
-QPushButton#SaveBtn {
-    font-size: 16px;
-    background: transparent;
-    border: none;
-    padding: 0px;
-}
-QPushButton#SaveBtn:hover {
-    background-color: #f1f3f4;
-    border-radius: 15px;
-}
-QPushButton#SaveBtn:pressed {
-    padding-top: 4px; /* Animation effect */
-    background-color: #e8eaed;
-}
+QPushButton#SaveBtn { font-size: 16px; background: transparent; border: none; }
+QPushButton#SaveBtn:hover { background-color: #f1f3f4; border-radius: 15px; }
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; }
-QComboBox { padding: 2px 25px 2px 10px; min-height: 28px; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #dadce0; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #f1f3f4; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #5f6368; width: 0; height: 0; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #1a73e8; }
 QTabWidget::pane { border: 1px solid #dadce0; background: white; }
-QTabBar::tab { color: #5f6368; }
 QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
 QMessageBox { background-color: #ffffff; }
 QMessageBox QLabel { color: #3c4043; font-size: 14px; }
@@ -78,97 +61,172 @@ QListWidget::item:selected { background-color: #3c4043; color: #8ab4f8; }
 QListWidget::item:hover:!selected { background-color: #35363a; }
 QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }
 QHeaderView::section:vertical { background-color: #2d2e30; border-right: 1px solid #3c4043; }
-QTableWidget QTableCornerButton::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; border-right: 2px solid #3c4043; }
 QTableWidget, QTreeWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; border-radius: 8px; }
 QTableWidget QWidget, QTreeWidget QWidget { background-color: #2d2e30; }
-QFrame[frameShape="5"] { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
+QFrame[frameShape="5"], #ContentCard { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
 QLabel#SummaryLabel { font-weight: 600; font-size: 15px; background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 8px; padding: 10px 15px; }
 QPushButton { background-color: #8ab4f8; color: #202124; border: 1px solid #8ab4f8; }
 QPushButton:hover { background-color: #aecbfa; }
 QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
-QPushButton#DeleteBtn:hover { background-color: #4d4d4d; }
-
-QPushButton#SaveBtn {
-    font-size: 16px;
-    background: transparent;
-    border: none;
-    padding: 0px;
-}
-QPushButton#SaveBtn:hover {
-    background-color: #3c4043;
-    border-radius: 15px;
-}
-QPushButton#SaveBtn:pressed {
-    padding-top: 4px; /* Animation effect */
-    background-color: #4d4d4d;
-}
+QPushButton#SaveBtn { font-size: 16px; background: transparent; border: none; }
+QPushButton#SaveBtn:hover { background-color: #3c4043; border-radius: 15px; }
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
-QComboBox { padding: 2px 25px 2px 10px; min-height: 28px; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #5f6368; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #35363a; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #9aa0a6; width: 0; height: 0; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #8ab4f8; }
 QTabWidget::pane { border: 1px solid #3c4043; background: #2d2e30; }
-QTabBar::tab { color: #9aa0a6; }
 QTabBar::tab:selected { color: #8ab4f8; border-bottom: 2px solid #8ab4f8; }
 QMessageBox { background-color: #2d2e30; }
 QMessageBox QLabel { color: #e8eaed; font-size: 14px; }
 QMessageBox QPushButton { min-width: 80px; }
 """
 
-class MainWindow(QMainWindow):
-    def __init__(self):
+class HouseholdSelector(QWidget):
+    """Initial screen to choose or create a household account book."""
+    def __init__(self, on_selected):
         super().__init__()
-        self.setWindowTitle("Household Manager")
+        self.on_selected = on_selected
+        self.setWindowTitle("가계부 선택")
+        self.resize(700, 600)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(20)
+
+        title = QLabel("🏠 관리할 가계부를 선택하세요")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a73e8;")
+        layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setStyleSheet("""
+            QListWidget { border: 1px solid #dadce0; border-radius: 12px; background: white; padding: 10px; } 
+            QListWidget::item { height: 60px; font-size: 15px; border-bottom: 1px solid #f1f3f4; padding-left: 10px; }
+            QListWidget::item:selected { background-color: #e8f0fe; color: #1a73e8; border-radius: 8px; }
+        """)
+        self.list_widget.itemDoubleClicked.connect(self.handle_select)
+        layout.addWidget(self.list_widget)
+
+        btn_layout = QHBoxLayout()
+        create_btn = QPushButton("+ 새 가계부 만들기")
+        create_btn.clicked.connect(self.handle_create)
+        
+        rename_btn = QPushButton("🏷️ 이름 변경")
+        rename_btn.clicked.connect(self.handle_rename)
+        
+        delete_btn = QPushButton("🗑️ 삭제")
+        delete_btn.setObjectName("DeleteBtn")
+        delete_btn.clicked.connect(self.handle_delete)
+        
+        btn_layout.addWidget(create_btn)
+        btn_layout.addWidget(rename_btn)
+        btn_layout.addWidget(delete_btn)
+        layout.addLayout(btn_layout)
+
+        select_btn = QPushButton("선택 완료 (더블클릭 가능)")
+        select_btn.setFixedHeight(50)
+        select_btn.setStyleSheet("font-size: 16px; font-weight: bold;")
+        select_btn.clicked.connect(self.handle_select)
+        layout.addWidget(select_btn)
+
+        self.refresh_list()
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        for hid, name, date in get_households():
+            item = QListWidgetItem(f"{name} (생성일: {date[:10]})")
+            item.setData(Qt.ItemDataRole.UserRole, hid)
+            self.list_widget.addItem(item)
+
+    def handle_create(self):
+        name, ok = QInputDialog.getText(self, "새 가계부", "가계부 이름을 입력하세요:")
+        if ok and name.strip():
+            if add_household(name.strip()): self.refresh_list()
+            else: QMessageBox.warning(self, "오류", "이미 존재하는 이름입니다.")
+
+    def handle_rename(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        hid = item.data(Qt.ItemDataRole.UserRole)
+        old_name = item.text().split(' (')[0]
+        
+        new_name, ok = QInputDialog.getText(self, "가계부 이름 변경", f"'{old_name}'의 새로운 이름을 입력하세요:", text=old_name)
+        if ok and new_name.strip() and new_name.strip() != old_name:
+            if update_household_name(hid, new_name.strip()):
+                self.refresh_list()
+            else:
+                QMessageBox.warning(self, "오류", "이미 존재하는 이름이거나 오류가 발생했습니다.")
+
+    def handle_delete(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        hid = item.data(Qt.ItemDataRole.UserRole)
+        name = item.text()
+        reply = QMessageBox.question(self, "삭제 확인", f"'{name}'의 모든 데이터를 영구 삭제하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            delete_household(hid)
+            self.refresh_list()
+
+    def handle_select(self):
+        item = self.list_widget.currentItem()
+        if item:
+            self.on_selected(item.data(Qt.ItemDataRole.UserRole), item.text().split(' (')[0])
+        else: QMessageBox.warning(self, "안내", "가계부를 먼저 선택해 주세요.")
+
+class AppWindow(QMainWindow):
+    """Main Dashboard for a specific household book."""
+    def __init__(self, hid, hname, on_back):
+        super().__init__()
+        self.hid = hid
+        self.hname = hname
+        self.on_back = on_back
+        self.setWindowTitle(f"Household Manager - {hname}")
         self.resize(2000, 900)
         self.is_dark_mode = False
-        init_db()
         
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
+        central_widget = QWidget(); central_widget.setLayout(main_layout); self.setCentralWidget(central_widget)
 
         # Sidebar
-        sidebar_container = QWidget()
-        sidebar_container.setFixedWidth(240)
-        sidebar_layout = QVBoxLayout(sidebar_container)
-        sidebar_layout.setContentsMargins(0, 10, 0, 10)
-        sidebar_layout.setSpacing(5)
+        sidebar_container = QWidget(); sidebar_container.setFixedWidth(240)
+        sidebar_layout = QVBoxLayout(sidebar_container); sidebar_layout.setContentsMargins(0, 10, 0, 10); sidebar_layout.setSpacing(5)
         
-        # Buttons Row
-        btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(10, 0, 10, 0)
-        self.theme_btn = QPushButton("🌙 테마")
-        self.theme_btn.setFlat(True)
-        self.theme_btn.setStyleSheet("font-size: 13px; padding: 10px; font-weight: bold;")
+        # 1. Top Buttons (Theme & Import)
+        btn_row = QHBoxLayout(); btn_row.setContentsMargins(10, 0, 10, 0)
+        
+        self.theme_btn = QPushButton("🌙 테마"); self.theme_btn.setFlat(True)
+        self.theme_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
         self.theme_btn.clicked.connect(self.toggle_theme)
         
-        self.import_btn = QPushButton("📂 엑셀 임포트")
-        self.import_btn.setFlat(True)
-        self.import_btn.setStyleSheet("font-size: 13px; padding: 10px; font-weight: bold;")
+        self.import_btn = QPushButton("📂 엑셀 임포트"); self.import_btn.setFlat(True)
+        self.import_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
         self.import_btn.clicked.connect(self.handle_excel_import)
         
-        btn_row.addWidget(self.theme_btn)
-        btn_row.addWidget(self.import_btn)
-        sidebar_layout.addLayout(btn_row)
+        btn_row.addWidget(self.theme_btn); btn_row.addWidget(self.import_btn); sidebar_layout.addLayout(btn_row)
 
-        self.sidebar = QListWidget()
-        sidebar_layout.addWidget(self.sidebar)
-        main_layout.addWidget(sidebar_container)
+        # 2. Back Button (Aligned with top buttons)
+        back_btn_row = QHBoxLayout()
+        back_btn_row.setContentsMargins(10, 0, 10, 0)
+        
+        self.back_btn = QPushButton("⬅️ 가계부 선택 이동")
+        self.back_btn.setFlat(True)
+        self.back_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px; margin-top: 5px;")
+        self.back_btn.clicked.connect(self.on_back)
+        
+        back_btn_row.addWidget(self.back_btn)
+        sidebar_layout.addLayout(back_btn_row)
+
+        self.sidebar = QListWidget(); sidebar_layout.addWidget(self.sidebar); main_layout.addWidget(sidebar_container)
 
         # Content
-        content_container = QVBoxLayout()
-        content_container.setContentsMargins(30, 20, 30, 20)
-        self.content_stack = QStackedWidget()
-        content_container.addWidget(self.content_stack)
-        main_layout.addLayout(content_container)
+        content_container = QVBoxLayout(); content_container.setContentsMargins(30, 20, 30, 20)
+        self.content_stack = QStackedWidget(); content_container.addWidget(self.content_stack); main_layout.addLayout(content_container)
 
-        self.setup_pages()
-        self.setup_sidebar()
-        self.sidebar.currentRowChanged.connect(self.handle_navigation)
-        self.sidebar.setCurrentRow(0)
+        self.setup_pages(); self.setup_sidebar()
+        self.sidebar.currentRowChanged.connect(self.handle_navigation); self.sidebar.setCurrentRow(0)
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -179,15 +237,15 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QFileDialog
         from ui.migration_util import import_from_excel
         file_path, _ = QFileDialog.getOpenFileName(self, "엑셀 가져오기", "", "Excel Files (*.xlsx *.xls)")
-        if file_path and import_from_excel(file_path, self):
+        if file_path and import_from_excel(self.hid, file_path, self):
             for i in range(self.content_stack.count()):
                 w = self.content_stack.widget(i)
                 if hasattr(w, 'load_data'): w.load_data()
                 if hasattr(w, 'refresh_data'): w.refresh_data()
 
     def setup_pages(self):
-        self.pages = {'settings': SettingsTab(), 'budget': BudgetTab(), 'asset': AssetTab()}
-        self.month_pages = {m: LedgerTab(month=m) for m in range(1, 13)}
+        self.pages = {'settings': SettingsTab(hid=self.hid), 'budget': BudgetTab(hid=self.hid), 'asset': AssetTab(hid=self.hid)}
+        self.month_pages = {m: LedgerTab(hid=self.hid, month=m) for m in range(1, 13)}
         self.content_stack.addWidget(self.pages['settings'])
         self.content_stack.addWidget(self.pages['budget'])
         self.content_stack.addWidget(self.pages['asset'])
@@ -197,9 +255,7 @@ class MainWindow(QMainWindow):
         self.sidebar.addItem(QListWidgetItem("⚙️  설정"))
         self.sidebar.addItem(QListWidgetItem("📊  예산 설정"))
         self.sidebar.addItem(QListWidgetItem("💰  자산 설정"))
-        h = QListWidgetItem("📅  월별 가계부")
-        h.setFlags(Qt.ItemFlag.NoItemFlags)
-        self.sidebar.addItem(h)
+        h = QListWidgetItem("📅  월별 가계부"); h.setFlags(Qt.ItemFlag.NoItemFlags); self.sidebar.addItem(h)
         for i in range(1, 13): self.sidebar.addItem(QListWidgetItem(f"      {i}월"))
 
     def handle_navigation(self, row):
@@ -212,11 +268,28 @@ class MainWindow(QMainWindow):
             if hasattr(w, 'load_data'): w.load_data()
             if hasattr(w, 'refresh_data'): w.refresh_data()
 
+class MainController:
+    """Manages switching between selector and application window."""
+    def __init__(self):
+        self.selector = None
+        self.app_window = None
+
+    def show_selector(self):
+        if self.app_window: self.app_window.close()
+        self.selector = HouseholdSelector(self.start_app)
+        self.selector.show()
+
+    def start_app(self, hid, hname):
+        self.selector.close()
+        self.app_window = AppWindow(hid, hname, self.show_selector)
+        self.app_window.show()
+
 def main():
+    init_db()
     app = QApplication(sys.argv)
     app.setStyleSheet(LIGHT_STYLE)
-    window = MainWindow()
-    window.show()
+    controller = MainController()
+    controller.show_selector()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
