@@ -11,13 +11,16 @@ class DateDelegate(QStyledItemDelegate):
         editor = QDateEdit(parent)
         editor.setDisplayFormat("yyyy-MM-dd")
         editor.setCalendarPopup(True)
-        # QDateEdit natively supports Up/Down arrow adjustment for parts of the date
+        # Set focus to 'Day' section by default
+        editor.setCurrentSection(QDateEdit.Section.DaySection)
         return editor
 
     def setEditorData(self, editor, index):
         date_str = index.data(Qt.ItemDataRole.EditRole) or index.data(Qt.ItemDataRole.DisplayRole)
         if date_str:
             editor.setDate(QDate.fromString(date_str, "yyyy-MM-dd"))
+        # Re-enforce 'Day' section focus after setting date
+        editor.setCurrentSection(QDateEdit.Section.DaySection)
 
     def setModelData(self, editor, model, index):
         model.setData(index, editor.date().toString("yyyy-MM-dd"), Qt.ItemDataRole.EditRole)
