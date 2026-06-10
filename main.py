@@ -151,19 +151,20 @@ class MainWindow(QMainWindow):
         sidebar_container = QWidget()
         sidebar_container.setFixedWidth(240)
         sidebar_layout = QVBoxLayout(sidebar_container)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.setSpacing(0)
+        sidebar_layout.setContentsMargins(0, 10, 0, 10)
+        sidebar_layout.setSpacing(5)
         
-        # Theme Toggle Button at top of sidebar
+        # Sidebar List (Contains Menu items)
+        self.sidebar = QListWidget()
+        sidebar_layout.addWidget(self.sidebar)
+
+        # Theme Toggle Button at bottom of sidebar
         self.theme_btn = QPushButton("🌙 다크 모드 전환")
         self.theme_btn.setFlat(True)
-        self.theme_btn.setStyleSheet("margin: 10px; padding: 10px; text-align: left;")
+        self.theme_btn.setStyleSheet("margin: 10px; padding: 12px; text-align: left; font-size: 14px;")
         self.theme_btn.clicked.connect(self.toggle_theme)
         sidebar_layout.addWidget(self.theme_btn)
 
-        # Sidebar List
-        self.sidebar = QListWidget()
-        sidebar_layout.addWidget(self.sidebar)
         main_layout.addWidget(sidebar_container)
 
         # 2. Content
@@ -182,7 +183,8 @@ class MainWindow(QMainWindow):
         # Default to current month
         import datetime
         current_month = datetime.datetime.now().month
-        self.sidebar.setCurrentRow(6 + (current_month - 1))
+        # Row 4 is Jan, 5 is Feb...
+        self.sidebar.setCurrentRow(4 + (current_month - 1))
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -204,27 +206,26 @@ class MainWindow(QMainWindow):
             self.content_stack.addWidget(self.month_pages[m])
 
     def setup_sidebar(self):
-        # Header: Menu
-        menu_header = QListWidgetItem("📋  MENU")
-        menu_header.setFlags(Qt.ItemFlag.NoItemFlags)
-        self.sidebar.addItem(menu_header)
+        # Items directly
+        self.sidebar.addItem(QListWidgetItem("⚙️  설정"))     # Row 0
+        self.sidebar.addItem(QListWidgetItem("📊  예산 설정")) # Row 1
+        self.sidebar.addItem(QListWidgetItem("💰  자산 설정")) # Row 2
         
-        self.sidebar.addItem(QListWidgetItem("⚙️  설정"))
-        self.sidebar.addItem(QListWidgetItem("📊  예산 설정"))
-        self.sidebar.addItem(QListWidgetItem("💰  자산 설정"))
-        self.sidebar.addItem(QListWidgetItem(""))
+        # Spacer
+        spacer = QListWidgetItem("")
+        spacer.setFlags(Qt.ItemFlag.NoItemFlags)
+        self.sidebar.addItem(spacer) # Row 3
         
-        ledger_header = QListWidgetItem("📅  월별 가계부")
-        ledger_header.setFlags(Qt.ItemFlag.NoItemFlags)
-        self.sidebar.addItem(ledger_header)
-        
+        # Months 1-12
         for i in range(1, 13):
-            self.sidebar.addItem(QListWidgetItem(f"      {i}월 내역"))
+            self.sidebar.addItem(QListWidgetItem(f"      {i}월 내역")) # Row 4-15
 
     def handle_navigation(self, row):
         target_index = -1
-        if 1 <= row <= 3: target_index = row - 1
-        elif 6 <= row <= 17: target_index = 3 + (row - 6)
+        if 0 <= row <= 2: 
+            target_index = row
+        elif 4 <= row <= 15: 
+            target_index = 3 + (row - 4)
             
         if target_index != -1:
             self.content_stack.setCurrentIndex(target_index)

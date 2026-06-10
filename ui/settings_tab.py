@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QLineEdit, QPushButton, QLabel, 
-                             QMessageBox, QHeaderView, QScrollArea, QFrame)
+                             QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout)
 from PyQt6.QtCore import Qt
 from database import add_category, get_categories, delete_category
 
@@ -119,10 +119,11 @@ class SettingsTab(QWidget):
         
         content_widget = QWidget()
         content_widget.setObjectName("ScrollContent")
-        self.content_layout = QVBoxLayout(content_widget)
-        self.content_layout.setSpacing(20)
+        self.grid_layout = QGridLayout(content_widget)
+        self.grid_layout.setSpacing(30)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Define categories
+        # Define categories and add in 2x2 grid
         self.sections = [
             CategorySection("💸 소비 항목 관리", "소비", self),
             CategorySection("💰 소득 항목 관리", "소득", self),
@@ -130,10 +131,14 @@ class SettingsTab(QWidget):
             CategorySection("🏦 자본/부채 관리", "자본", self)
         ]
 
-        for section in self.sections:
-            self.content_layout.addWidget(section)
+        self.grid_layout.addWidget(self.sections[0], 0, 0)
+        self.grid_layout.addWidget(self.sections[1], 0, 1)
+        self.grid_layout.addWidget(self.sections[2], 1, 0)
+        self.grid_layout.addWidget(self.sections[3], 1, 1)
         
-        self.content_layout.addStretch()
+        # Ensure grid items stay at the top if window is large
+        self.grid_layout.setRowStretch(2, 1)
+        
         scroll.setWidget(content_widget)
         main_layout.addWidget(scroll)
 
