@@ -43,7 +43,10 @@ class LedgerSpreadsheet(QTableWidget):
         self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
-        self.setSortingEnabled(True)
+        
+        # Disable automatic sorting during data entry to prevent "row jumping"
+        self.setSortingEnabled(False)
+        
         # itemChanged is stable for text cells
         self.itemChanged.connect(self.handle_item_changed)
 
@@ -231,7 +234,9 @@ class LedgerTab(QWidget):
             elif ctype == "소득_중":
                 items = [c[3] for c in get_categories("소득") if c[2] == parent_val]
             else: items = []
+            
             child_combo.addItems(items)
+            child_combo.setCurrentIndex(-1) # Prevent automatic first item selection
             child_combo.blockSignals(False)
 
     def populate_combo(self, combo, ctype, table, row, col):
