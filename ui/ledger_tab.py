@@ -34,7 +34,7 @@ class DateDelegate(QStyledItemDelegate):
         model.setData(index, editor.date().toString("yyyy-MM-dd"), Qt.ItemDataRole.EditRole)
 
 class StyledComboBox(QComboBox):
-    """Enhanced ComboBox with stable events for spreadsheet use."""
+    """Enhanced ComboBox that opens on Arrow keys."""
     def __init__(self, parent=None, row=None, col=None, spreadsheet=None):
         super().__init__(parent)
         self.row_idx = row
@@ -44,46 +44,51 @@ class StyledComboBox(QComboBox):
     def keyPressEvent(self, event):
         if event.key() in [Qt.Key.Key_Down, Qt.Key.Key_Up] and not self.view().isVisible():
             self.showPopup()
-        elif event.key() in [Qt.Key.Key_Return, Qt.Key.Key_Enter]:
-            self.spreadsheet.save_row_to_db(self.row_idx)
-            super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
 
-    def focusOutEvent(self, event):
-        self.spreadsheet.save_row_to_db(self.row_idx)
-        super().focusOutEvent(event)
-
 class LedgerSpreadsheet(QTableWidget):
-    """A highly customized spreadsheet table with dynamic dropdowns."""
+    """A highly customized spreadsheet table with manual save button."""
     def __init__(self, ledger_tab, entry_type, columns):
-        super().__init__(0, len(columns) + 1)
+        # Add "저장" column to the end
+        self.base_cols = columns
+        display_cols = columns + ["저장"]
+        super().__init__(0, len(display_cols) + 1) # +1 for hidden ID
         self.ledger_tab = ledger_tab
         self.entry_type = entry_type
-        self.col_names = columns
-        self.init_ui()
+        self.init_ui(display_cols)
 
-    def init_ui(self):
-        headers = ["ID"] + self.col_names
+    def init_ui(self, display_cols):
+        headers = ["ID"] + display_cols
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
         
         # UI Polish: Default to Stretch for most columns
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # 1. FIXED WIDTH for Date (Index 1) - Ensures YYYY-MM-DD visibility
+        # FIXED WIDTH for Date (Index 1)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(1, 100)
         
-        # 2. FIXED WIDTH for Amount (Expense: Index 6, Income: Index 4)
+        # FIXED WIDTH for Amount (Expense: 6, Income: 4)
         amt_col = 6 if self.entry_type == "지출" else 4
         self.horizontalHeader().setSectionResizeMode(amt_col, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(amt_col, 120)
+
+        # FIXED WIDTH for Save Button (Last Column)
+        save_col = self.columnCount() - 1
+        self.horizontalHeader().setSectionResizeMode(save_col, QHeaderView.ResizeMode.Fixed)
+        self.setColumnWidth(save_col, 60)
         
         self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
         self.setSortingEnabled(True)
+
+        # Apply Date Delegate for the Date column (Index 1)
+        self.date_delegate = DateDelegate(self)
+        self.setItemDelegateForColumn(1, self.date_delegate)
+        
         self.itemChanged.connect(self.handle_item_changed)
 
     def handle_item_changed(self, item):
@@ -91,18 +96,22 @@ class LedgerSpreadsheet(QTableWidget):
         row = item.row()
         col = item.column()
         
+        # Auto-format commas for amount column
         amt_col = 6 if self.entry_type == "지출" else 4
         if col == amt_col:
             self.blockSignals(True)
             text = item.text().replace(',', '').strip()
             if text.isdigit():
                 item.setText(format(int(text), ','))
+            else:
+                item.setText("0")
             self.blockSignals(False)
 
-        self.save_row_to_db(row)
-
     def save_row_to_db(self, row):
-        if self.signalsBlocked() or row < 0 or row >= self.rowCount(): return
+        # Block sorting during save/ID update
+        sorting_was_enabled = self.isSortingEnabled()
+        self.setSortingEnabled(False)
+        
         id_item = self.item(row, 0)
         if not id_item: return
         entry_id_text = id_item.text().strip()
@@ -129,20 +138,22 @@ class LedgerSpreadsheet(QTableWidget):
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
             asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
             
-            has_data = cat_id or amount > 0 or payee or asset_id
-            
             if entry_id:
                 update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
-            elif date and has_data:
-                new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
-                if new_id:
-                    self.blockSignals(True)
-                    self.setItem(row, 0, QTableWidgetItem(str(new_id)))
-                    self.blockSignals(False)
+            else:
+                if date:
+                    new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                    if new_id:
+                        self.blockSignals(True)
+                        self.setItem(row, 0, QTableWidgetItem(str(new_id)))
+                        self.blockSignals(False)
             
             self.ledger_tab.refresh_summary()
+            # Show visual feedback (optional)
         except Exception as e:
             print(f"DEBUG Save error: {e}")
+        finally:
+            self.setSortingEnabled(sorting_was_enabled)
 
     def get_val(self, row, col):
         widget = self.cellWidget(row, col)
@@ -169,7 +180,7 @@ class LedgerTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(15)
 
-        self.summary_label = QLabel("수입: 0 | 지출: 0 | 잔액: 0")
+        self.summary_label = QLabel("월 예산: 0 | 지출: 0 | 남은 예산: 0")
         self.summary_label.setObjectName("SummaryLabel")
         layout.addWidget(self.summary_label)
 
@@ -225,7 +236,7 @@ class LedgerTab(QWidget):
     def filter_table(self, table, text):
         for row in range(table.rowCount()):
             match = False
-            for col in range(1, table.columnCount()):
+            for col in range(1, table.columnCount() - 1): # Exclude save column
                 val = table.get_val(row, col).lower()
                 if text.lower() in val:
                     match = True
@@ -238,9 +249,11 @@ class LedgerTab(QWidget):
         self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
         self.expense_table.blockSignals(True)
+        
         entries = get_ledger_entries(self.year, self.month)
         self.income_table.setRowCount(0)
         self.expense_table.setRowCount(0)
+        
         for e in entries:
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
@@ -248,12 +261,15 @@ class LedgerTab(QWidget):
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], amt_formatted, e[7], e[6]]
                 for i, val in enumerate(data): self.set_table_item(self.expense_table, row, i, val)
+                self.add_save_button(self.expense_table, row)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
                 for i, val in enumerate(data): self.set_table_item(self.income_table, row, i, val)
+                self.add_save_button(self.income_table, row)
+                
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
         self.income_table.setSortingEnabled(True)
@@ -265,14 +281,11 @@ class LedgerTab(QWidget):
             table.setItem(row, col, QTableWidgetItem(val))
             return
         
-        # Determine if it's a numeric column
         amt_col = 6 if table.entry_type == "지출" else 4
-        
         combos = {"지출": {2: "결제수단", 3: "수단명", 4: "소비_대", 5: "소비_중"}, "수입": {2: "소득_대", 3: "소득_중"}}
         etype = table.entry_type
         
         if col in combos[etype]:
-            # For Combo cells, we also set the text on the underlying item for sorting
             item = QTableWidgetItem(val or "")
             table.setItem(row, col, item)
             
@@ -281,6 +294,7 @@ class LedgerTab(QWidget):
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
             
+            # Cascading logic with row-aware mapping
             if etype == "지출":
                 if col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "수단명", t))
                 elif col == 4: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
@@ -296,17 +310,20 @@ class LedgerTab(QWidget):
         else:
             table.setItem(row, col, QTableWidgetItem(val or ""))
 
+    def add_save_button(self, table, row):
+        save_col = table.columnCount() - 1
+        btn = QPushButton("✅")
+        btn.setStyleSheet("font-size: 14px; padding: 2px; border: none; background: transparent;")
+        # Manual Save Trigger
+        btn.clicked.connect(lambda: table.save_row_to_db(row))
+        # Ensure row-awareness is preserved even after sorting
+        table.setCellWidget(row, save_col, btn)
+
     def handle_combo_change(self, table, row, col, child_col, ctype, text):
-        # Update the hidden item text for sorting
         item = table.item(row, col)
         if item: item.setText(text)
-        
-        # Handle cascading if necessary
         if child_col is not None:
             self.refresh_child_combo(table, row, child_col, ctype, text)
-        
-        # Save to DB
-        table.save_row_to_db(row)
 
     def refresh_child_combo(self, table, row, child_col, ctype, parent_val):
         child_combo = table.cellWidget(row, child_col)
@@ -320,13 +337,12 @@ class LedgerTab(QWidget):
             else: items = []
             child_combo.addItems(items)
             child_combo.setCurrentIndex(-1)
-            # Also update child item text
             child_item = table.item(row, child_col)
             if child_item: child_item.setText("")
             child_combo.blockSignals(False)
 
     def populate_combo(self, combo, ctype, table, row, col):
-        from database import get_categories, get_assets
+        from database import get_categories
         if ctype == "결제수단": items = sorted(list(set(c[2] for c in get_categories("결제수단"))))
         elif ctype == "수단명":
             p = table.get_val(row, 2)
@@ -349,9 +365,11 @@ class LedgerTab(QWidget):
         table.insertRow(row)
         table.setItem(row, 0, QTableWidgetItem(""))
         table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
-        for col in range(2, table.columnCount()):
+        for col in range(2, table.columnCount() - 1):
             dv = "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else ""
             self.set_table_item(table, row, col, dv)
+        
+        self.add_save_button(table, row)
         table.scrollToBottom()
         table.blockSignals(False)
         table.setSortingEnabled(True)
@@ -366,8 +384,6 @@ class LedgerTab(QWidget):
 
     def refresh_summary(self):
         from database import get_detailed_budgets
-        
-        # 1. Fetch Monthly Budget for the current month
         budget_data = get_detailed_budgets(self.year)
         monthly_total_budget = 0
         for cat_data in budget_data.values():
@@ -376,16 +392,11 @@ class LedgerTab(QWidget):
         def sum_table(table, col):
             total = 0
             for r in range(table.rowCount()):
-                if not table.isRowHidden(r):
-                    total += table.get_int(r, col)
+                if not table.isRowHidden(r): total += table.get_int(r, col)
             return total
-            
         exp = sum_table(self.expense_table, 6)
         remaining = monthly_total_budget - exp
-        
-        self.summary_label.setText(
-            f"월 예산: {monthly_total_budget:,} | 지출: {exp:,} | 남은 예산: {remaining:,}"
-        )
+        self.summary_label.setText(f"월 예산: {monthly_total_budget:,} | 지출: {exp:,} | 남은 예산: {remaining:,}")
 
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"
