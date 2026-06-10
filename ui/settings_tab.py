@@ -33,7 +33,6 @@ class CategorySection(QFrame):
         self.tree.setHeaderHidden(True) # Hide the "분류명" header to solve black background bug
         self.tree.setIndentation(20)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
-        self.tree.setFixedHeight(250)
         self.tree.itemClicked.connect(self.handle_selection_changed)
         layout.addWidget(self.tree)
 
@@ -43,10 +42,10 @@ class CategorySection(QFrame):
         # Inputs
         input_layout = QHBoxLayout()
         self.parent_input = QLineEdit()
-        self.parent_input.setPlaceholderText("대분류 (예: 식비)")
+        self.parent_input.setPlaceholderText("대분류")
         self.parent_input.returnPressed.connect(self.handle_add) # Add on Enter
         self.sub_input = QLineEdit()
-        self.sub_input.setPlaceholderText("중분류 (예: 외식)")
+        self.sub_input.setPlaceholderText("중분류")
         self.sub_input.returnPressed.connect(self.handle_add) # Add on Enter
         
         self.add_btn = QPushButton("추가")
@@ -195,8 +194,8 @@ class SettingsTab(QWidget):
         for i, section in enumerate(self.sections):
             self.grid_layout.addWidget(section, 0, i)
         
-        # Ensure items stay at the top and stretch horizontally
-        self.grid_layout.setRowStretch(1, 1)
+        # Ensure items fill the vertical space
+        self.grid_layout.setRowStretch(0, 1)
         for i in range(4):
             self.grid_layout.setColumnStretch(i, 1)
         
