@@ -56,15 +56,29 @@ QLineEdit, QSpinBox, QDateEdit, QComboBox {
 """
 
 LIGHT_STYLE = COMMON_STYLE + """
-QMainWindow, QStackedWidget { background-color: #f8f9fa; }
+QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #f8f9fa; border: none; }
 QWidget { color: #3c4043; }
 QListWidget { background-color: #ffffff; border-right: 1px solid #dadce0; }
 QListWidget::item { color: #5f6368; }
 QListWidget::item:selected { background-color: #e8f0fe; color: #1a73e8; }
 QListWidget::item:hover:!selected { background-color: #f1f3f4; }
 
+/* Cards in Settings/etc */
+QFrame[frameShape="5"] { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
+
+QLabel#SummaryLabel {
+    font-weight: 600;
+    font-size: 15px;
+    background-color: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    padding: 10px 15px;
+}
+
 QPushButton { background-color: #1a73e8; color: white; border: 1px solid #1a73e8; }
 QPushButton:hover { background-color: #1765cc; }
+QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
+QPushButton#DeleteBtn:hover { background-color: #e8eaed; }
 
 QTableWidget { background-color: #ffffff; border: 1px solid #dadce0; gridline-color: #f1f3f4; selection-background-color: #e8f0fe; selection-color: #1a73e8; }
 QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; color: #5f6368; }
@@ -78,15 +92,29 @@ QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
 """
 
 DARK_STYLE = COMMON_STYLE + """
-QMainWindow, QStackedWidget { background-color: #202124; }
+QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #202124; border: none; }
 QWidget { color: #e8eaed; }
 QListWidget { background-color: #2d2e30; border-right: 1px solid #3c4043; }
 QListWidget::item { color: #9aa0a6; }
 QListWidget::item:selected { background-color: #3c4043; color: #8ab4f8; }
 QListWidget::item:hover:!selected { background-color: #35363a; }
 
+/* Cards in Settings/etc */
+QFrame[frameShape="5"] { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
+
+QLabel#SummaryLabel {
+    font-weight: 600;
+    font-size: 15px;
+    background-color: #2d2e30;
+    border: 1px solid #3c4043;
+    border-radius: 8px;
+    padding: 10px 15px;
+}
+
 QPushButton { background-color: #8ab4f8; color: #202124; border: 1px solid #8ab4f8; }
 QPushButton:hover { background-color: #aecbfa; }
+QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
+QPushButton#DeleteBtn:hover { background-color: #4d4d4d; }
 
 QTableWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; }
 QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }

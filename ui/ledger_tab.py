@@ -22,12 +22,7 @@ class LedgerTab(QWidget):
         # Summary and Controls
         top_layout = QHBoxLayout()
         self.summary_label = QLabel("수입: 0 | 지출: 0 | 잔액: 0")
-        self.summary_label.setStyleSheet("""
-            font-weight: 600; 
-            font-size: 15px; 
-            padding: 10px 15px;
-            border-radius: 8px;
-        """)
+        self.summary_label.setObjectName("SummaryLabel")
         
         add_btn = QPushButton("+ 행 추가")
         add_btn.clicked.connect(self.add_blank_row)

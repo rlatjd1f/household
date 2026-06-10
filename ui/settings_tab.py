@@ -55,8 +55,8 @@ class CategorySection(QFrame):
         add_btn.clicked.connect(self.handle_add)
         
         del_btn = QPushButton("삭제")
+        del_btn.setObjectName("DeleteBtn")
         del_btn.setFixedWidth(60)
-        del_btn.setStyleSheet("background-color: #f1f3f4; color: #5f6368;")
         del_btn.clicked.connect(self.handle_delete)
 
         input_layout.addWidget(self.parent_input)
