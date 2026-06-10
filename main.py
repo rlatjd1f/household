@@ -101,6 +101,11 @@ QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px 
 QTabWidget::pane { border: 1px solid #dadce0; background: white; }
 QTabBar::tab { color: #5f6368; }
 QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
+
+/* Dialogs */
+QMessageBox { background-color: #ffffff; }
+QMessageBox QLabel { color: #3c4043; font-size: 14px; }
+QMessageBox QPushButton { min-width: 80px; }
 """
 
 DARK_STYLE = COMMON_STYLE + """
@@ -142,6 +147,11 @@ QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px 
 QTabWidget::pane { border: 1px solid #3c4043; background: #2d2e30; }
 QTabBar::tab { color: #9aa0a6; }
 QTabBar::tab:selected { color: #8ab4f8; border-bottom: 2px solid #8ab4f8; }
+
+/* Dialogs */
+QMessageBox { background-color: #2d2e30; }
+QMessageBox QLabel { color: #e8eaed; font-size: 14px; }
+QMessageBox QPushButton { min-width: 80px; }
 """
 
 class MainWindow(QMainWindow):
