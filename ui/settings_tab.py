@@ -91,7 +91,7 @@ class CategorySection(QFrame):
             
             parent_item.setExpanded(True)
         
-        self.parent_input.clear()
+        # NOTE: We no longer clear parent_input here to allow continuous entry
         self.sub_input.clear()
         self.add_btn.setEnabled(True)
         self.tree.blockSignals(False)
