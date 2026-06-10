@@ -4,6 +4,14 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, Q
 from PyQt6.QtCore import Qt
 from database import get_monthly_category_stats, get_monthly_daily_trends, get_yearly_monthly_trends, get_detailed_budgets
 import datetime
+import platform
+
+# --- Font Setup for Korean ---
+plt.rcParams['axes.unicode_minus'] = False
+if platform.system() == 'Darwin':
+    plt.rcParams['font.family'] = 'AppleGothic'
+elif platform.system() == 'Windows':
+    plt.rcParams['font.family'] = 'Malgun Gothic'
 
 class ReportSection(QFrame):
     def __init__(self, title):
@@ -13,8 +21,18 @@ class ReportSection(QFrame):
         lbl = QLabel(title)
         lbl.setStyleSheet("font-weight: bold; font-size: 16px; color: #1a73e8; margin-bottom: 10px;")
         layout.addWidget(lbl)
-        self.content_layout = QVBoxLayout()
-        layout.addLayout(self.content_layout)
+        
+        self.content_widget = QWidget()
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self.content_widget)
+
+    def clear_content(self):
+        # Remove all widgets from the content layout
+        while self.content_layout.count():
+            child = self.content_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
 class MonthlyReportTab(QWidget):
     def __init__(self, hid=None):
@@ -83,8 +101,21 @@ class MonthlyReportTab(QWidget):
         
         # 1. Update Cards
         total_exp = sum(row[1] for row in cat_stats)
-        self.card_total_exp.content_layout.addWidget(QLabel(f"<h2 style='color:#d93025'>{total_exp:,} 원</h2>"))
+        self.card_total_exp.clear_content()
+        self.card_total_exp.content_layout.addWidget(QLabel(f"<h1 style='color:#d93025; font-size:24px;'>{total_exp:,} 원</h1>"))
         
+        # Budget Util
+        budget_data = get_detailed_budgets(self.hid, self.year)
+        monthly_budget = 0
+        for cat_data in budget_data.values():
+            monthly_budget += cat_data.get(self.month, 0)
+        
+        util_percent = (total_exp / monthly_budget * 100) if monthly_budget > 0 else 0
+        util_color = "#1a73e8" if util_percent <= 100 else "#d93025"
+        self.card_budget_util.clear_content()
+        self.card_budget_util.content_layout.addWidget(QLabel(f"<h1 style='color:{util_color}; font-size:24px;'>{util_percent:.1f}%</h1>"))
+        self.card_budget_util.content_layout.addWidget(QLabel(f"<small>(총 예산: {monthly_budget:,} 원)</small>"))
+
         # 2. Pie Chart
         self.cat_canvas.figure.clear()
         if cat_stats:
