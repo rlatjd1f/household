@@ -1,8 +1,23 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
-                             QHeaderView, QSpinBox)
+                             QHeaderView, QSpinBox, QStyledItemDelegate, QLineEdit)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QIntValidator
 from database import get_detailed_budgets, save_detailed_budget
+
+class NumericDelegate(QStyledItemDelegate):
+    """Delegate that only allows numeric input in the editor."""
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+        # Allow only positive integers
+        validator = QIntValidator(0, 999999999, editor)
+        editor.setValidator(validator)
+        return editor
+
+    def setEditorData(self, editor, index):
+        # Clean commas when entering edit mode
+        text = index.data(Qt.ItemDataRole.DisplayRole).replace(',', '')
+        editor.setText(text)
 
 class BudgetTab(QWidget):
     def __init__(self):
@@ -48,14 +63,18 @@ class BudgetTab(QWidget):
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         
-        # UI Polish: Hide vertical header (row numbers) and fix clipping
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         for i in range(1, 13):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setDefaultSectionSize(45) # Taller rows for readability
+        self.table.verticalHeader().setDefaultSectionSize(45)
+        
+        # Apply Numeric Delegate to all month columns (1-12)
+        delegate = NumericDelegate(self)
+        for i in range(1, 13):
+            self.table.setItemDelegateForColumn(i, delegate)
         
         for i, cat in enumerate(self.categories):
             item = QTableWidgetItem(cat)
@@ -85,22 +104,30 @@ class BudgetTab(QWidget):
         from PyQt6.QtWidgets import QApplication
         return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
 
+    def format_num(self, val):
+        try:
+            if isinstance(val, str):
+                val = val.replace(',', '').strip()
+                val = int(val) if val else 0
+            return f"{val:,}"
+        except:
+            return "0"
+
     def handle_item_changed(self, item):
         col = item.column()
         if col == 0: return 
         if item.row() == len(self.categories): return
         
-        self.update_month_total(col)
+        # Auto-format commas when editing is done
+        self.table.blockSignals(True)
+        text = item.text().replace(',', '')
+        if text.isdigit():
+            item.setText(self.format_num(int(text)))
+        else:
+            item.setText("0")
+        self.table.blockSignals(False)
 
-    def format_currency(self, val):
-        try:
-            # Handle string or int
-            if isinstance(val, str):
-                val = val.replace(',', '').replace('₩', '').strip()
-                val = int(val) if val else 0
-            return f"₩ {val:,}"
-        except:
-            return "₩ 0"
+        self.update_month_total(col)
 
     def update_month_total(self, col):
         self.table.blockSignals(True)
@@ -108,12 +135,12 @@ class BudgetTab(QWidget):
         for row in range(len(self.categories)):
             item = self.table.item(row, col)
             if item:
-                val_str = item.text().replace(',', '').replace('₩', '').strip()
+                val_str = item.text().replace(',', '').strip()
                 try: total += int(val_str)
                 except: pass
         
         total_item = self.table.item(len(self.categories), col)
-        total_item.setText(self.format_currency(total))
+        total_item.setText(self.format_num(total))
         total_item.setForeground(QColor("#1a73e8") if not self.is_dark() else QColor("#8ab4f8"))
         self.table.blockSignals(False)
 
@@ -127,7 +154,7 @@ class BudgetTab(QWidget):
             cat_data = data.get(cat_clean, {})
             for month in range(1, 13):
                 amt = cat_data.get(month, 0)
-                self.table.item(row, month).setText(self.format_currency(amt))
+                self.table.item(row, month).setText(self.format_num(amt))
         
         for m in range(1, 13):
             self.update_month_total(m)
@@ -140,7 +167,7 @@ class BudgetTab(QWidget):
                 cat_clean = cat.split(' ')[1]
                 for month in range(1, 13):
                     item = self.table.item(row, month)
-                    amt_str = item.text().replace(',', '').replace('₩', '').strip()
+                    amt_str = item.text().replace(',', '').strip()
                     amt = int(amt_str) if amt_str else 0
                     save_detailed_budget(year, month, cat_clean, amt)
             
@@ -150,5 +177,3 @@ class BudgetTab(QWidget):
             QMessageBox.warning(self, "오류", "금액은 숫자만 입력 가능합니다.")
         except Exception as e:
             QMessageBox.critical(self, "오류", f"저장 중 오류 발생: {e}")
-
-from PyQt6.QtGui import QColor
