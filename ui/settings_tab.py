@@ -14,14 +14,11 @@ class CategorySection(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet("""
             CategorySection { 
-                background-color: white; 
                 border-radius: 12px; 
-                border: 1px solid #dadce0; 
             }
             QLabel#SectionTitle {
                 font-weight: 600;
                 font-size: 16px;
-                color: #202124;
                 padding: 10px 5px;
             }
         """)

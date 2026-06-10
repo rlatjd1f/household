@@ -25,11 +25,8 @@ class LedgerTab(QWidget):
         self.summary_label.setStyleSheet("""
             font-weight: 600; 
             font-size: 15px; 
-            color: #202124;
-            background-color: #ffffff;
             padding: 10px 15px;
             border-radius: 8px;
-            border: 1px solid #dadce0;
         """)
         
         add_btn = QPushButton("+ 행 추가")
