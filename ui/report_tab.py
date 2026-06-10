@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
                              QHeaderView, QTextBrowser)
 from PyQt6.QtCore import Qt
 from database import (get_monthly_category_stats, get_monthly_daily_trends, 
-                      get_detailed_budgets, get_ledger_entries)
+                      get_yearly_monthly_trends, get_detailed_budgets, get_ledger_entries)
 import datetime
 import platform
 
