@@ -119,6 +119,7 @@ class CategorySection(QFrame):
         if add_category(self.db_type, parent, sub):
             self.sub_input.clear()
             self.load_data()
+            self.sub_input.setFocus() # Keep focus for continuous entry
         else:
             QMessageBox.warning(self, "오류", "이미 존재하는 항목이거나 오류가 발생했습니다.")
 
