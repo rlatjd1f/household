@@ -92,18 +92,28 @@ class BudgetTab(QWidget):
         
         self.update_month_total(col)
 
+    def format_currency(self, val):
+        try:
+            # Handle string or int
+            if isinstance(val, str):
+                val = val.replace(',', '').replace('₩', '').strip()
+                val = int(val) if val else 0
+            return f"₩ {val:,}"
+        except:
+            return "₩ 0"
+
     def update_month_total(self, col):
         self.table.blockSignals(True)
         total = 0
         for row in range(len(self.categories)):
             item = self.table.item(row, col)
             if item:
-                val_str = item.text().replace(',', '')
+                val_str = item.text().replace(',', '').replace('₩', '').strip()
                 try: total += int(val_str)
                 except: pass
         
         total_item = self.table.item(len(self.categories), col)
-        total_item.setText(format(total, ','))
+        total_item.setText(self.format_currency(total))
         total_item.setForeground(QColor("#1a73e8") if not self.is_dark() else QColor("#8ab4f8"))
         self.table.blockSignals(False)
 
@@ -117,7 +127,7 @@ class BudgetTab(QWidget):
             cat_data = data.get(cat_clean, {})
             for month in range(1, 13):
                 amt = cat_data.get(month, 0)
-                self.table.item(row, month).setText(format(amt, ','))
+                self.table.item(row, month).setText(self.format_currency(amt))
         
         for m in range(1, 13):
             self.update_month_total(m)
@@ -129,7 +139,8 @@ class BudgetTab(QWidget):
             for row, cat in enumerate(self.categories):
                 cat_clean = cat.split(' ')[1]
                 for month in range(1, 13):
-                    amt_str = self.table.item(row, month).text().replace(',', '')
+                    item = self.table.item(row, month)
+                    amt_str = item.text().replace(',', '').replace('₩', '').strip()
                     amt = int(amt_str) if amt_str else 0
                     save_detailed_budget(year, month, cat_clean, amt)
             
