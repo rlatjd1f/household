@@ -291,5 +291,18 @@ def save_detailed_budget(year, month, category_name, amount):
     conn.commit()
     conn.close()
 
+def clear_all_data():
+    """Wipes all data for a fresh import."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM categories")
+    cursor.execute("DELETE FROM budgets")
+    cursor.execute("DELETE FROM assets")
+    cursor.execute("DELETE FROM ledgers")
+    cursor.execute("DELETE FROM sqlite_sequence") # Reset autoincrement
+    conn.commit()
+    conn.close()
+    print("Database cleared for migration.")
+
 if __name__ == "__main__":
     init_db()
