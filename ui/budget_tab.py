@@ -1,22 +1,19 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
-                             QHeaderView, QSpinBox, QStyledItemDelegate, QLineEdit)
+                             QHeaderView, QSpinBox, QStyledItemDelegate, QLineEdit, QInputDialog)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIntValidator
 from database import get_detailed_budgets, save_detailed_budget
 
 class NumericDelegate(QStyledItemDelegate):
-    """Delegate that only allows numeric input in the editor."""
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
-        # Allow only positive integers
         validator = QIntValidator(0, 999999999, editor)
         editor.setValidator(validator)
         return editor
 
     def setEditorData(self, editor, index):
-        # Clean commas when entering edit mode
-        text = index.data(Qt.ItemDataRole.DisplayRole).replace(',', '')
+        text = str(index.data(Qt.ItemDataRole.DisplayRole)).replace(',', '')
         editor.setText(text)
 
 class BudgetTab(QWidget):
@@ -35,7 +32,6 @@ class BudgetTab(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
 
-        # Header
         top_layout = QHBoxLayout()
         header_title = QLabel("📊 항목별 월간 예산 설정")
         header_title.setStyleSheet("font-weight: bold; font-size: 18px; color: #1a73e8;")
@@ -57,9 +53,9 @@ class BudgetTab(QWidget):
         top_layout.addWidget(save_btn)
         layout.addLayout(top_layout)
 
-        # Budget Table
-        self.table = QTableWidget(len(self.categories) + 1, 13)
-        headers = ["항목"] + [f"{i}월" for i in range(1, 13)]
+        # Budget Table (Rows: Categories + Total, Cols: 항목 + 1-12월 + 일괄적용)
+        self.table = QTableWidget(len(self.categories) + 1, 14)
+        headers = ["항목"] + [f"{i}월" for i in range(1, 13)] + ["일괄 적용"]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         
@@ -67,23 +63,32 @@ class BudgetTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         for i in range(1, 13):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(13, QHeaderView.ResizeMode.ResizeToContents)
         
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setDefaultSectionSize(45)
         
-        # Apply Numeric Delegate to all month columns (1-12)
         delegate = NumericDelegate(self)
         for i in range(1, 13):
             self.table.setItemDelegateForColumn(i, delegate)
         
         for i, cat in enumerate(self.categories):
+            # Category Name
             item = QTableWidgetItem(cat)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 0, item)
+            
+            # Month Cells
             for m in range(1, 13):
                 cell = QTableWidgetItem("0")
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(i, m, cell)
+            
+            # Batch Apply Button
+            batch_btn = QPushButton("일괄 적용")
+            batch_btn.setStyleSheet("padding: 4px; font-size: 11px;")
+            batch_btn.clicked.connect(lambda chk, r=i: self.handle_batch_apply(r))
+            self.table.setCellWidget(i, 13, batch_btn)
 
         # Total Row
         total_row = len(self.categories)
@@ -96,6 +101,10 @@ class BudgetTab(QWidget):
             t_cell.setFlags(t_cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
             t_cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(total_row, m, t_cell)
+        # Empty cell for 13th column in total row
+        empty_item = QTableWidgetItem("")
+        empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.table.setItem(total_row, 13, empty_item)
 
         self.table.itemChanged.connect(self.handle_item_changed)
         layout.addWidget(self.table)
@@ -115,10 +124,9 @@ class BudgetTab(QWidget):
 
     def handle_item_changed(self, item):
         col = item.column()
-        if col == 0: return 
+        if col == 0 or col == 13: return 
         if item.row() == len(self.categories): return
         
-        # Auto-format commas when editing is done
         self.table.blockSignals(True)
         text = item.text().replace(',', '')
         if text.isdigit():
@@ -126,7 +134,6 @@ class BudgetTab(QWidget):
         else:
             item.setText("0")
         self.table.blockSignals(False)
-
         self.update_month_total(col)
 
     def update_month_total(self, col):
@@ -143,6 +150,19 @@ class BudgetTab(QWidget):
         total_item.setText(self.format_num(total))
         total_item.setForeground(QColor("#1a73e8") if not self.is_dark() else QColor("#8ab4f8"))
         self.table.blockSignals(False)
+
+    def handle_batch_apply(self, row):
+        cat_name = self.table.item(row, 0).text()
+        amount, ok = QInputDialog.getInt(self, "일괄 적용", f"[{cat_name}]\n12개월 전체에 적용할 금액을 입력하세요:", 0, 0, 999999999, 1)
+        if ok:
+            self.table.blockSignals(True)
+            formatted_amt = self.format_num(amount)
+            for m in range(1, 13):
+                self.table.item(row, m).setText(formatted_amt)
+            self.table.blockSignals(False)
+            # Update all totals
+            for m in range(1, 13):
+                self.update_month_total(m)
 
     def load_data(self):
         year = self.year_spin.value()
