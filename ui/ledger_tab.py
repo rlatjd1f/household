@@ -5,6 +5,14 @@ from PyQt6.QtCore import Qt
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry, 
                       delete_ledger_entry, get_categories, get_assets)
 
+class StyledComboBox(QComboBox):
+    """ComboBox that opens popup on Arrow keys for better spreadsheet UX."""
+    def keyPressEvent(self, event):
+        if event.key() in [Qt.Key.Key_Down, Qt.Key.Key_Up] and not self.view().isVisible():
+            self.showPopup()
+        else:
+            super().keyPressEvent(event)
+
 class LedgerSpreadsheet(QTableWidget):
     """A highly customized spreadsheet table with dynamic dropdowns."""
     def __init__(self, ledger_tab, entry_type, columns):
@@ -18,14 +26,10 @@ class LedgerSpreadsheet(QTableWidget):
         headers = ["ID"] + self.col_names
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        
-        # UI Polish: Use Stretch to fill entire width
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # Specific overrides for narrow columns
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Date
-        
-        self.verticalHeader().setDefaultSectionSize(45) 
+        # UI Polish: Compact row height
+        self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
         self.setSortingEnabled(True)
@@ -181,18 +185,17 @@ class LedgerTab(QWidget):
         
         etype = table.entry_type
         if col in combos[etype]:
-            combo = QComboBox()
+            combo = StyledComboBox()
             combo.setEditable(True)
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
             
-            # Intelligent Cascading Logic
             if etype == "지출":
-                if col == 2: # 결제수단 -> 수단명
+                if col == 2: 
                     combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 3, "수단명", t))
-                elif col == 4: # 소비_대 -> 소비_중
+                elif col == 4: 
                     combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 5, "소비_중", t))
-            elif etype == "수입" and col == 2: # 소득_대 -> 소득_중
+            elif etype == "수입" and col == 2:
                 combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 3, "소득_중", t))
 
             combo.currentTextChanged.connect(lambda: table.save_row_to_db(row))
@@ -205,8 +208,7 @@ class LedgerTab(QWidget):
         if isinstance(child_combo, QComboBox):
             child_combo.blockSignals(True)
             child_combo.clear()
-            
-            from database import get_categories, get_assets
+            from database import get_categories
             if ctype == "수단명":
                 items = [c[3] for c in get_categories("결제수단") if c[2] == parent_val]
             elif ctype == "소비_중":
@@ -214,7 +216,6 @@ class LedgerTab(QWidget):
             elif ctype == "소득_중":
                 items = [c[3] for c in get_categories("소득") if c[2] == parent_val]
             else: items = []
-            
             child_combo.addItems(items)
             child_combo.blockSignals(False)
 

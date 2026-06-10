@@ -116,26 +116,31 @@ QLineEdit, QSpinBox, QDateEdit, QComboBox {
 }
 
 QComboBox {
-    padding: 6px 30px 6px 12px; /* Extra right padding for arrow */
+    padding: 2px 25px 2px 10px; /* Reduced vertical padding */
+    min-height: 28px;
 }
 
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 25px;
+    width: 20px;
     border-left: 1px solid #dadce0;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
-    background-color: #f8f9fa;
+    background-color: #f1f3f4;
 }
 
 QComboBox::down-arrow {
     image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
     border-top: 5px solid #5f6368;
     width: 0;
     height: 0;
+}
+
+QComboBox::down-arrow:on { /* shift the arrow when popup is open */
+    top: 1px;
 }
 
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus {
@@ -207,13 +212,14 @@ QLineEdit, QSpinBox, QDateEdit, QComboBox {
 }
 
 QComboBox {
-    padding: 6px 30px 6px 12px;
+    padding: 2px 25px 2px 10px;
+    min-height: 28px;
 }
 
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 25px;
+    width: 20px;
     border-left: 1px solid #5f6368;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
@@ -222,11 +228,15 @@ QComboBox::drop-down {
 
 QComboBox::down-arrow {
     image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
     border-top: 5px solid #9aa0a6;
     width: 0;
     height: 0;
+}
+
+QComboBox::down-arrow:on {
+    top: 1px;
 }
 
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus {
