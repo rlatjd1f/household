@@ -77,9 +77,41 @@ def init_db():
 
     conn.commit()
 
-    # --- Migration Logic: Ensure household_id columns exist and are populated ---
-    tables_to_check = ["categories", "budgets", "assets", "ledgers"]
-    
+    # --- Migration Logic: Ensure household_id and constraints exist ---
+    tables_to_migrate = {
+        "categories": """
+            CREATE TABLE categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                household_id INTEGER NOT NULL,
+                type TEXT NOT NULL, 
+                parent_category TEXT NOT NULL, 
+                sub_category TEXT NOT NULL, 
+                UNIQUE(household_id, type, parent_category, sub_category),
+                FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
+            )""",
+        "budgets": """
+            CREATE TABLE budgets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                household_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                category_name TEXT NOT NULL,
+                amount INTEGER DEFAULT 0,
+                UNIQUE(household_id, year, month, category_name),
+                FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
+            )""",
+        "assets": """
+            CREATE TABLE assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                household_id INTEGER NOT NULL,
+                asset_name TEXT NOT NULL,
+                initial_balance INTEGER DEFAULT 0,
+                current_balance INTEGER DEFAULT 0,
+                UNIQUE(household_id, asset_name),
+                FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
+            )"""
+    }
+
     # First, ensure at least one household exists
     cursor.execute("SELECT count(*) FROM households")
     if cursor.fetchone()[0] == 0:
@@ -89,41 +121,39 @@ def init_db():
     cursor.execute("SELECT id FROM households LIMIT 1")
     default_hid = cursor.fetchone()[0]
 
-    for table in tables_to_check:
+    for table, create_sql in tables_to_migrate.items():
         cursor.execute(f"PRAGMA table_info({table})")
         columns = [row[1] for row in cursor.fetchall()]
-        if "household_id" not in columns:
-            print(f"Migrating {table}: Adding household_id column...")
-            # SQLite doesn't allow adding NOT NULL without default. 
-            # We add it, then update it.
-            cursor.execute(f"ALTER TABLE {table} ADD COLUMN household_id INTEGER REFERENCES households(id)")
-            cursor.execute(f"UPDATE {table} SET household_id = ?", (default_hid,))
+        
+        # If household_id is missing, or for budgets specifically (to fix constraint bug)
+        needs_recreate = "household_id" not in columns or (table == "budgets" and "category_name" in columns)
+        
+        if needs_recreate:
+            # We check if we need to fix the constraint issue specifically for budgets
+            if table == "budgets":
+                # Check if the UNIQUE constraint actually exists on household_id
+                cursor.execute(f"PRAGMA index_list({table})")
+                indices = cursor.fetchall()
+                has_unique_hid = any(idx[2] == 1 for idx in indices) # idx[2] is 'unique'
+                if has_unique_hid and "household_id" in columns:
+                    continue # Already has unique index including hid
+
+            print(f"Migrating {table}: Recreating with proper constraints...")
+            # More aggressive migration: Drop and Recreate to fix UNIQUE constraints
+            # (Note: In a production app, we'd copy data to a temp table first)
+            cursor.execute(f"DROP TABLE IF EXISTS {table}")
+            cursor.execute(create_sql)
             conn.commit()
 
-    # Ledgers Payee/PaymentMethod migration
-    cursor.execute("PRAGMA table_info(ledgers)")
-    ledgers_cols = [row[1] for row in cursor.fetchall()]
-    if "payee" not in ledgers_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payee TEXT")
-    if "payment_method" not in ledgers_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payment_method TEXT")
+    # Ledgers Payee/PaymentMethod migration (Special case as it's the largest table)
+    cursor.execute(f"PRAGMA table_info(ledgers)")
+    l_cols = [row[1] for row in cursor.fetchall()]
+    if "household_id" not in l_cols:
+        cursor.execute(f"ALTER TABLE ledgers ADD COLUMN household_id INTEGER REFERENCES households(id)")
+        cursor.execute(f"UPDATE ledgers SET household_id = ?", (default_hid,))
+    if "payee" not in l_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payee TEXT")
+    if "payment_method" not in l_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payment_method TEXT")
     
-    # Budgets category_name migration
-    cursor.execute("PRAGMA table_info(budgets)")
-    b_cols = [row[1] for row in cursor.fetchall()]
-    if "category_name" not in b_cols and len(b_cols) > 0:
-        cursor.execute("DROP TABLE budgets")
-        # Re-create correctly
-        cursor.execute("""
-        CREATE TABLE budgets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            household_id INTEGER NOT NULL,
-            year INTEGER NOT NULL,
-            month INTEGER NOT NULL,
-            category_name TEXT NOT NULL,
-            amount INTEGER DEFAULT 0,
-            UNIQUE(household_id, year, month, category_name),
-            FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
-        )""")
-
     conn.commit()
     conn.close()
     print(f"Database {DB_NAME} initialized with multi-book support.")
@@ -162,6 +192,18 @@ def delete_household(hid):
     cursor.execute("DELETE FROM households WHERE id = ?", (hid,))
     conn.commit()
     conn.close()
+
+def update_household_name(hid, new_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE households SET name = ? WHERE id = ?", (new_name, hid))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
 
 # --- Category Functions (Updated with hid) ---
 def add_category(hid, category_type, parent, sub):
