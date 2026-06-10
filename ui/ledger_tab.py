@@ -38,15 +38,18 @@ class LedgerSpreadsheet(QTableWidget):
     def handle_item_changed(self, item):
         if self.signalsBlocked(): return
         row = item.row()
+        # Ensure we don't save empty placeholder rows unless they have data
         self.save_row_to_db(row)
 
     def save_row_to_db(self, row):
         id_item = self.item(row, 0)
         if not id_item: return
-        entry_id = int(id_item.text()) if id_item.text() else None
+        entry_id_text = id_item.text().strip()
+        entry_id = int(entry_id_text) if entry_id_text else None
         
         try:
             if self.entry_type == "지출":
+                # [소비날짜, 결제수단, 수단명, 대분류, 항목, 지출금액, 사용처, 코멘트]
                 date = self.get_val(row, 1)
                 pay_method = self.get_val(row, 2)
                 asset_name = self.get_val(row, 3)
@@ -56,6 +59,7 @@ class LedgerSpreadsheet(QTableWidget):
                 payee = self.get_val(row, 7)
                 memo = self.get_val(row, 8)
             else:
+                # [소득날짜, 대분류, 항목, 소득 금액, 소득처]
                 date = self.get_val(row, 1)
                 parent = self.get_val(row, 2)
                 sub = self.get_val(row, 3)
@@ -66,12 +70,15 @@ class LedgerSpreadsheet(QTableWidget):
                 memo = ""
 
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
-            asset_id = self.ledger_tab.resolve_asset_id(asset_name)
+            asset_id = self.ledger_tab.resolve_asset_id(asset_name) if asset_name else None
             
+            # CRITICAL: Auto-save logic
+            # If we have an ID, update it.
+            # If we don't have an ID, only create if we have Date, Category (Parent/Sub) and Amount > 0
             if entry_id:
                 update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             else:
-                if date and (cat_id or payee):
+                if date and cat_id and amount > 0:
                     new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
                     if new_id:
                         self.blockSignals(True)
