@@ -83,7 +83,7 @@ class LedgerSpreadsheet(QTableWidget):
                 pay_method, asset_name, memo = "", "", ""
 
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
-            asset_id = self.ledger_tab.resolve_asset_id(asset_name)
+            asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
             
             has_data = cat_id or amount > 0 or payee or asset_id
             
@@ -297,9 +297,17 @@ class LedgerTab(QWidget):
             if c[2] == parent and c[3] == sub: return c[0]
         return None
 
-    def resolve_asset_id(self, name):
-        from database import get_assets
-        assets = get_assets()
-        for a in assets:
-            if a[1] == name: return a[0]
+    def resolve_asset_id(self, etype, pay_method, asset_name):
+        from database import get_categories, get_assets
+        if etype == "지출":
+            # For 지출, we look for categories of type '결제수단'
+            categories = get_categories("결제수단")
+            for c in categories:
+                if c[2] == pay_method and c[3] == asset_name:
+                    return c[0]
+        else:
+            # For 수입, it currently uses assets table (if needed)
+            assets = get_assets()
+            for a in assets:
+                if a[1] == asset_name: return a[0]
         return None
