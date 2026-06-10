@@ -49,6 +49,7 @@ class StyledComboBox(QComboBox):
         super().focusOutEvent(event)
 
 class LedgerSpreadsheet(QTableWidget):
+    """A highly customized spreadsheet table with dynamic dropdowns."""
     def __init__(self, ledger_tab, entry_type, columns):
         super().__init__(0, len(columns) + 1)
         self.ledger_tab = ledger_tab
@@ -77,7 +78,19 @@ class LedgerSpreadsheet(QTableWidget):
 
     def handle_item_changed(self, item):
         if self.signalsBlocked(): return
-        self.save_row_to_db(item.row())
+        row = item.row()
+        col = item.column()
+        
+        # Auto-format commas for amount column
+        amt_col = 6 if self.entry_type == "지출" else 4
+        if col == amt_col:
+            self.blockSignals(True)
+            text = item.text().replace(',', '').strip()
+            if text.isdigit():
+                item.setText(format(int(text), ','))
+            self.blockSignals(False)
+
+        self.save_row_to_db(row)
 
     def save_row_to_db(self, row):
         if self.signalsBlocked() or row < 0 or row >= self.rowCount(): return
@@ -89,7 +102,6 @@ class LedgerSpreadsheet(QTableWidget):
         
         try:
             if self.entry_type == "지출":
-                # [소비날짜, 결제수단, 수단명, 대분류, 항목, 지출금액, 사용처, 코멘트]
                 date = self.get_val(row, 1)
                 pay_method = self.get_val(row, 2)
                 asset_name = self.get_val(row, 3)
@@ -99,7 +111,6 @@ class LedgerSpreadsheet(QTableWidget):
                 payee = self.get_val(row, 7)
                 memo = self.get_val(row, 8)
             else:
-                # [소득날짜, 대분류, 항목, 소득 금액, 소득처]
                 date = self.get_val(row, 1)
                 parent = self.get_val(row, 2)
                 sub = self.get_val(row, 3)
@@ -110,8 +121,7 @@ class LedgerSpreadsheet(QTableWidget):
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
             asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
             
-            # More lenient save condition
-            has_data = cat_id or amount > 0 or payee or memo or asset_id
+            has_data = cat_id or amount > 0 or payee or asset_id
             
             if entry_id:
                 print(f"DEBUG: Updating entry {entry_id}...")
@@ -205,13 +215,15 @@ class LedgerTab(QWidget):
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
                 self.expense_table.insertRow(row)
-                data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], str(e[5]), e[7], e[6]]
+                amt_formatted = format(e[5], ',')
+                data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], amt_formatted, e[7], e[6]]
                 for i, val in enumerate(data):
                     self.set_table_item(self.expense_table, row, i, val)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
-                data = [str(e[0]), e[1], e[9], e[10], str(e[5]), e[7]]
+                amt_formatted = format(e[5], ',')
+                data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
                 for i, val in enumerate(data):
                     self.set_table_item(self.income_table, row, i, val)
 
@@ -292,7 +304,8 @@ class LedgerTab(QWidget):
         table.setItem(row, 0, QTableWidgetItem(""))
         table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
         for col in range(2, table.columnCount()):
-            self.set_table_item(table, row, col, "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else "")
+            default_val = "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else ""
+            self.set_table_item(table, row, col, default_val)
         table.scrollToBottom()
         table.blockSignals(False)
 
