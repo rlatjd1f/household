@@ -30,8 +30,8 @@ class CategorySection(QFrame):
 
         # Tree Widget (Hierarchical)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["분류명"])
-        self.tree.header().setStretchLastSection(True)
+        self.tree.setHeaderHidden(True) # Hide the "분류명" header to solve black background bug
+        self.tree.setIndentation(20)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.tree.setFixedHeight(250)
         self.tree.itemClicked.connect(self.handle_selection_changed)
@@ -73,11 +73,18 @@ class CategorySection(QFrame):
             grouped[parent].append(cat)
 
         for parent_name, subs in sorted(grouped.items()):
-            parent_item = QTreeWidgetItem(self.tree, [parent_name])
+            # Parent Item Styling
+            parent_item = QTreeWidgetItem(self.tree, [f"📂 {parent_name}"])
             parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "parent", "name": parent_name})
             
+            # Make Parent Font Bold
+            font = parent_item.font(0)
+            font.setBold(True)
+            parent_item.setFont(0, font)
+            
             for sub in sorted(subs, key=lambda x: x[3]):
-                sub_item = QTreeWidgetItem(parent_item, [sub[3]])
+                # Sub Item Styling with visual branch prefix
+                sub_item = QTreeWidgetItem(parent_item, [f"└ {sub[3]}"])
                 sub_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "sub", "id": sub[0], "parent": parent_name, "name": sub[3]})
             
             parent_item.setExpanded(True)
@@ -137,10 +144,6 @@ class CategorySection(QFrame):
                 self.load_data()
 
     def delete_parent_category(self, parent_name):
-        # We need to delete all entries that match this type and parent_name
-        # Since we don't have a specific 'delete by parent' function, we iterate or add one.
-        # Let's use a new function in database.py for efficiency.
-        from database import delete_category_by_parent
         delete_parent_category_db(self.db_type, parent_name)
 
 def delete_parent_category_db(db_type, parent_name):
