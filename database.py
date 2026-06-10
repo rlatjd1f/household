@@ -11,21 +11,22 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL, -- '소비', '소득', '결제수단', '자본', '부채'
-        parent_category TEXT NOT NULL, -- 대분류
-        sub_category TEXT NOT NULL, -- 중분류
+        type TEXT NOT NULL, 
+        parent_category TEXT NOT NULL, 
+        sub_category TEXT NOT NULL, 
         UNIQUE(type, parent_category, sub_category)
     )
     """)
 
-    # 2. Monthly Budgets Table (Category-independent)
+    # 2. Budgets Table (Category-specific strings)
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS monthly_budgets (
+    CREATE TABLE IF NOT EXISTS budgets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         year INTEGER NOT NULL,
         month INTEGER NOT NULL,
+        category_name TEXT NOT NULL,
         amount INTEGER DEFAULT 0,
-        UNIQUE(year, month)
+        UNIQUE(year, month, category_name)
     )
     """)
 
@@ -39,18 +40,18 @@ def init_db():
     )
     """)
 
-    # 4. Ledgers Table (Updated for Payee and specific columns)
+    # 4. Ledgers Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ledgers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL, -- YYYY-MM-DD
-        type TEXT NOT NULL, -- '수입', '지출', '이체'
+        date TEXT NOT NULL, 
+        type TEXT NOT NULL, 
         category_id INTEGER,
         asset_id INTEGER,
         amount INTEGER NOT NULL,
         memo TEXT,
-        payee TEXT, -- 사용처 / 소득처
-        payment_method TEXT, -- '신용카드', '은행' 등 (참고용)
+        payee TEXT,
+        payment_method TEXT,
         FOREIGN KEY (category_id) REFERENCES categories (id),
         FOREIGN KEY (asset_id) REFERENCES assets (id)
     )
@@ -67,6 +68,24 @@ def init_db():
     if "payment_method" not in columns:
         cursor.execute("ALTER TABLE ledgers ADD COLUMN payment_method TEXT")
         
+    # --- Migration: Fix Budgets Table Schema ---
+    cursor.execute("PRAGMA table_info(budgets)")
+    b_columns = [row[1] for row in cursor.fetchall()]
+    if "category_name" not in b_columns and len(b_columns) > 0:
+        # Table exists but has old schema (likely used category_id)
+        # Drop and recreate for the new detailed budget feature
+        cursor.execute("DROP TABLE budgets")
+        cursor.execute("""
+        CREATE TABLE budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            category_name TEXT NOT NULL,
+            amount INTEGER DEFAULT 0,
+            UNIQUE(year, month, category_name)
+        )
+        """)
+
     conn.commit()
     conn.close()
     print(f"Database {DB_NAME} initialized successfully.")
@@ -170,7 +189,6 @@ def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amoun
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Get old values to revert balance
         cursor.execute("SELECT type, amount, asset_id FROM ledgers WHERE id = ?", (entry_id,))
         old = cursor.fetchone()
         if old:
@@ -180,12 +198,10 @@ def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amoun
             elif old_type == "지출":
                 cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (old_amount, old_asset_id))
 
-        # Update ledger
         cursor.execute("""
             UPDATE ledgers SET date=?, type=?, category_id=?, asset_id=?, amount=?, memo=?, payee=?, payment_method=? WHERE id=?
         """, (date, entry_type, category_id, asset_id, amount, memo, payee, payment_method, entry_id))
 
-        # Apply new balance
         if entry_type == "수입":
             cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (amount, asset_id))
         elif entry_type == "지출":
@@ -234,23 +250,28 @@ def delete_ledger_entry(entry_id):
         conn.commit()
     conn.close()
 
-# --- Budget Functions (New Table) ---
-def get_monthly_budgets(year):
+# --- Budget Functions (Category-specific) ---
+def get_detailed_budgets(year):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT month, amount FROM monthly_budgets WHERE year = ?", (year,))
+    cursor.execute("SELECT month, category_name, amount FROM budgets WHERE year = ?", (year,))
     rows = cursor.fetchall()
     conn.close()
-    return {month: amount for month, amount in rows}
+    
+    data = {}
+    for month, cat, amt in rows:
+        if cat not in data: data[cat] = {}
+        data[cat][month] = amt
+    return data
 
-def save_monthly_budget(year, month, amount):
+def save_detailed_budget(year, month, category_name, amount):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO monthly_budgets (year, month, amount)
-        VALUES (?, ?, ?)
-        ON CONFLICT(year, month) DO UPDATE SET amount = excluded.amount
-    """, (year, month, amount))
+        INSERT INTO budgets (year, month, category_name, amount)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(year, month, category_name) DO UPDATE SET amount = excluded.amount
+    """, (year, month, category_name, amount))
     conn.commit()
     conn.close()
 
