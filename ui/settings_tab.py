@@ -1,11 +1,11 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                             QTableWidgetItem, QLineEdit, QPushButton, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, 
+                             QTreeWidgetItem, QLineEdit, QPushButton, QLabel, 
                              QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout)
 from PyQt6.QtCore import Qt
 from database import add_category, get_categories, delete_category
 
 class CategorySection(QFrame):
-    """A reusable section for each category type (e.g., 소비, 소득)."""
+    """A hierarchical tree section for category management."""
     def __init__(self, title, db_type, parent_tab):
         super().__init__()
         self.title = title
@@ -13,14 +13,8 @@ class CategorySection(QFrame):
         self.parent_tab = parent_tab
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet("""
-            CategorySection { 
-                border-radius: 12px; 
-            }
-            QLabel#SectionTitle {
-                font-weight: 600;
-                font-size: 16px;
-                padding: 10px 5px;
-            }
+            CategorySection { border-radius: 12px; }
+            QLabel#SectionTitle { font-weight: 600; font-size: 16px; padding: 10px 5px; }
         """)
         self.init_ui()
 
@@ -34,31 +28,28 @@ class CategorySection(QFrame):
         header.setObjectName("SectionTitle")
         layout.addWidget(header)
 
-        # Table
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["ID", "대분류", "중분류"])
-        self.table.setColumnHidden(0, True)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setFixedHeight(200)
-        layout.addWidget(self.table)
+        # Tree Widget (Hierarchical)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["분류명"])
+        self.tree.header().setStretchLastSection(True)
+        self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
+        self.tree.setFixedHeight(250)
+        layout.addWidget(self.tree)
 
-        # Inputs and Buttons
+        # Inputs
         input_layout = QHBoxLayout()
         self.parent_input = QLineEdit()
-        self.parent_input.setPlaceholderText("대분류")
+        self.parent_input.setPlaceholderText("대분류 (예: 식비)")
         self.sub_input = QLineEdit()
-        self.sub_input.setPlaceholderText("중분류")
+        self.sub_input.setPlaceholderText("중분류 (예: 외식)")
         
         add_btn = QPushButton("추가")
-        add_btn.setFixedWidth(80) # Increased from 60
-        add_btn.setStyleSheet("padding-left: 10px; padding-right: 10px;")
+        add_btn.setFixedWidth(80)
         add_btn.clicked.connect(self.handle_add)
         
         del_btn = QPushButton("삭제")
         del_btn.setObjectName("DeleteBtn")
-        del_btn.setFixedWidth(80) # Increased from 60
-        del_btn.setStyleSheet("padding-left: 10px; padding-right: 10px;")
+        del_btn.setFixedWidth(80)
         del_btn.clicked.connect(self.handle_delete)
 
         input_layout.addWidget(self.parent_input)
@@ -69,36 +60,54 @@ class CategorySection(QFrame):
 
     def load_data(self):
         categories = get_categories(self.db_type)
-        self.table.setRowCount(0)
+        self.tree.clear()
+        
+        # Group by parent
+        grouped = {}
         for cat in categories:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(cat[0])))
-            self.table.setItem(row, 1, QTableWidgetItem(cat[2]))
-            self.table.setItem(row, 2, QTableWidgetItem(cat[3]))
+            # cat: (id, type, parent, sub)
+            parent = cat[2]
+            if parent not in grouped:
+                grouped[parent] = []
+            grouped[parent].append(cat)
+
+        for parent_name, subs in sorted(grouped.items()):
+            parent_item = QTreeWidgetItem(self.tree, [parent_name])
+            parent_item.setFlags(parent_item.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
+            
+            for sub in sorted(subs, key=lambda x: x[3]):
+                sub_item = QTreeWidgetItem(parent_item, [sub[3]])
+                sub_item.setData(0, Qt.ItemDataRole.UserRole, sub[0]) # Store ID
+            
+            parent_item.setExpanded(True)
 
     def handle_add(self):
         parent = self.parent_input.text().strip()
         sub = self.sub_input.text().strip()
         if not parent or not sub:
-            QMessageBox.warning(self, "경고", f"{self.title}의 대분류와 중분류를 입력하세요.")
+            QMessageBox.warning(self, "경고", f"{self.title}의 대분류와 중분류를 모두 입력하세요.")
             return
 
         if add_category(self.db_type, parent, sub):
-            self.parent_input.clear()
+            # Only clear sub_input to make adding multiple sub-categories easier
             self.sub_input.clear()
             self.load_data()
         else:
             QMessageBox.warning(self, "오류", "이미 존재하는 항목이거나 오류가 발생했습니다.")
 
     def handle_delete(self):
-        row = self.table.currentRow()
-        if row < 0:
-            QMessageBox.warning(self, "경고", "삭제할 항목을 선택하세요.")
+        item = self.tree.currentItem()
+        if not item:
+            QMessageBox.warning(self, "경고", "삭제할 분류를 선택하세요.")
             return
 
-        cat_id = int(self.table.item(row, 0).text())
-        confirm = QMessageBox.question(self, "확인", "정말 삭제하시겠습니까?", 
+        cat_id = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        if cat_id is None:
+            QMessageBox.warning(self, "안내", "대분류 자체는 삭제할 수 없습니다. 소속된 모든 중분류를 삭제하면 자동으로 사라지거나, 기능상 중분류를 선택해 삭제해 주세요.")
+            return
+
+        confirm = QMessageBox.question(self, "확인", f"'{item.text(0)}' 분류를 삭제하시겠습니까?", 
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if confirm == QMessageBox.StandardButton.Yes:
             delete_category(cat_id)

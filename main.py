@@ -49,6 +49,13 @@ QHeaderView::section {
     text-transform: uppercase;
 }
 
+/* Fix for black corners/headers in some themes */
+QTableWidget QTableCornerButton::section, 
+QTreeWidget QHeaderView::section {
+    background-color: transparent;
+    border: none;
+}
+
 QLineEdit, QSpinBox, QDateEdit, QComboBox {
     border-radius: 6px;
     padding: 8px 12px;
@@ -63,6 +70,11 @@ QListWidget { background-color: #ffffff; border-right: 1px solid #dadce0; }
 QListWidget::item { color: #5f6368; }
 QListWidget::item:selected { background-color: #e8f0fe; color: #1a73e8; }
 QListWidget::item:hover:!selected { background-color: #f1f3f4; }
+
+/* Table/Tree Headers */
+QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; color: #5f6368; }
+QHeaderView::section:vertical { background-color: #ffffff; border-right: 2px solid #e8eaed; }
+QTableWidget QTableCornerButton::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; border-right: 2px solid #e8eaed; }
 
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
@@ -100,6 +112,11 @@ QListWidget { background-color: #2d2e30; border-right: 1px solid #3c4043; }
 QListWidget::item { color: #9aa0a6; }
 QListWidget::item:selected { background-color: #3c4043; color: #8ab4f8; }
 QListWidget::item:hover:!selected { background-color: #35363a; }
+
+/* Table/Tree Headers */
+QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }
+QHeaderView::section:vertical { background-color: #2d2e30; border-right: 2px solid #3c4043; }
+QTableWidget QTableCornerButton::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; border-right: 2px solid #3c4043; }
 
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
