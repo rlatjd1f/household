@@ -223,10 +223,10 @@ def get_ledger_entries(year, month):
     
     cursor.execute("""
         SELECT l.id, l.date, l.type, l.category_id, l.asset_id, l.amount, l.memo, l.payee, l.payment_method,
-               c.parent_category, c.sub_category, a.asset_name
+               c.parent_category, c.sub_category, p.sub_category as asset_name
         FROM ledgers l
         LEFT JOIN categories c ON l.category_id = c.id
-        LEFT JOIN assets a ON l.asset_id = a.id
+        LEFT JOIN categories p ON l.asset_id = p.id
         WHERE l.date LIKE ?
         ORDER BY l.date ASC, l.id ASC
     """, (date_pattern,))
