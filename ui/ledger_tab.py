@@ -212,11 +212,16 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def refresh_data(self):
+        # Disable sorting and block signals to prevent index jumps during load
+        self.income_table.setSortingEnabled(False)
+        self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
         self.expense_table.blockSignals(True)
+        
         entries = get_ledger_entries(self.year, self.month)
         self.income_table.setRowCount(0)
         self.expense_table.setRowCount(0)
+        
         for e in entries:
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
@@ -230,8 +235,12 @@ class LedgerTab(QWidget):
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
                 for i, val in enumerate(data): self.set_table_item(self.income_table, row, i, val)
+
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
+        # Re-enable sorting after data is fully loaded
+        self.income_table.setSortingEnabled(True)
+        self.expense_table.setSortingEnabled(True)
         self.refresh_summary()
 
     def set_table_item(self, table, row, col, val):
@@ -285,6 +294,7 @@ class LedgerTab(QWidget):
         combo.addItems(items)
 
     def add_row(self, table):
+        table.setSortingEnabled(False) # Prevent row jumping while adding
         table.blockSignals(True)
         row = table.rowCount()
         table.insertRow(row)
@@ -295,6 +305,7 @@ class LedgerTab(QWidget):
             self.set_table_item(table, row, col, dv)
         table.scrollToBottom()
         table.blockSignals(False)
+        table.setSortingEnabled(True)
 
     def delete_row(self, table):
         row = table.currentRow()
