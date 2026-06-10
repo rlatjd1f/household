@@ -238,24 +238,21 @@ class MainWindow(QMainWindow):
         spacer.setFlags(Qt.ItemFlag.NoItemFlags)
         self.sidebar.addItem(spacer) # Row 3
         
-        # 2. Months 1-12 with Emojis and Season Colors (Subtle)
-        month_data = [
-            ("❄️", "1월 내역"), ("🌨️", "2월 내역"), ("🌱", "3월 내역"),
-            ("🌸", "4월 내역"), ("🌷", "5월 내역"), ("☀️", "6월 내역"),
-            ("🌊", "7월 내역"), ("🍦", "8월 내역"), ("🍂", "9월 내역"),
-            ("🍁", "10월 내역"), ("☁️", "11월 내역"), ("🎄", "12월 내역")
-        ]
+        # 2. Months 1-12: Simple Labels
+        ledger_header = QListWidgetItem("📅  월별 가계부")
+        ledger_header.setFlags(Qt.ItemFlag.NoItemFlags) # Non-selectable
+        self.sidebar.addItem(ledger_header)
 
-        for i, (emoji, text) in enumerate(month_data):
-            item = QListWidgetItem(f"      {emoji} {text}")
+        for i in range(1, 13):
+            item = QListWidgetItem(f"      {i}월")
             self.sidebar.addItem(item)
 
     def handle_navigation(self, row):
         target_index = -1
         if 0 <= row <= 2: 
             target_index = row
-        elif 4 <= row <= 15: 
-            target_index = 3 + (row - 4)
+        elif 5 <= row <= 16: # Row 4 is Header, 5-16 are Jan-Dec
+            target_index = 3 + (row - 5)
             
         if target_index != -1:
             self.content_stack.setCurrentIndex(target_index)
