@@ -154,16 +154,16 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 10, 0, 10)
         sidebar_layout.setSpacing(5)
         
-        # Sidebar List (Contains Menu items)
-        self.sidebar = QListWidget()
-        sidebar_layout.addWidget(self.sidebar)
-
-        # Theme Toggle Button at bottom of sidebar
+        # Theme Toggle Button at top of sidebar
         self.theme_btn = QPushButton("🌙 다크 모드 전환")
         self.theme_btn.setFlat(True)
         self.theme_btn.setStyleSheet("margin: 10px; padding: 12px; text-align: left; font-size: 14px;")
         self.theme_btn.clicked.connect(self.toggle_theme)
         sidebar_layout.addWidget(self.theme_btn)
+
+        # Sidebar List (Contains Menu items)
+        self.sidebar = QListWidget()
+        sidebar_layout.addWidget(self.sidebar)
 
         main_layout.addWidget(sidebar_container)
 
