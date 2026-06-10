@@ -47,6 +47,7 @@ class MonthlyReportTab(QWidget):
         
         top_layout = QHBoxLayout()
         self.month_combo = QComboBox()
+        self.month_combo.setMaxVisibleItems(12) # Show all months at once
         for m in range(1, 13): self.month_combo.addItem(f"{m}월", m)
         self.month_combo.setCurrentIndex(self.month - 1)
         self.month_combo.currentIndexChanged.connect(self.on_month_changed)
@@ -71,10 +72,9 @@ class MonthlyReportTab(QWidget):
         summary_row.addWidget(self.card_budget_util)
         self.layout.addLayout(summary_row)
 
-        # 2. Category Distribution (Horizontal Bar Chart)
+        # 2. Category Distribution (Vertical Bar Chart - Pivot X:Category, Y:Amount)
         self.cat_section = ReportSection("📊 카테고리별 지출 현황")
-        # Increase figure height to accommodate more categories
-        self.cat_canvas = FigureCanvas(plt.Figure(figsize=(8, 7), tight_layout=True))
+        self.cat_canvas = FigureCanvas(plt.Figure(figsize=(8, 5), tight_layout=True))
         self.cat_section.content_layout.addWidget(self.cat_canvas)
         self.layout.addWidget(self.cat_section)
 
@@ -104,7 +104,8 @@ class MonthlyReportTab(QWidget):
 
     def load_data(self):
         if self.hid is None: return
-        cat_stats = sorted(get_monthly_category_stats(self.hid, self.year, self.month), key=lambda x: x[1])
+        # Sort by amount descending for better visual flow
+        cat_stats = sorted(get_monthly_category_stats(self.hid, self.year, self.month), key=lambda x: x[1], reverse=True)
         daily_trends = get_monthly_daily_trends(self.hid, self.year, self.month)
         
         # 1. Update Cards
@@ -120,20 +121,28 @@ class MonthlyReportTab(QWidget):
         self.card_budget_util.content_layout.addWidget(QLabel(f"<h1 style='color:{util_color}; font-size:24px;'>{util_percent:.1f}%</h1>"))
         self.card_budget_util.content_layout.addWidget(QLabel(f"<small>(총 예산: {monthly_budget:,} 원)</small>"))
 
-        # 2. Category Horizontal Bar Chart
+        # 2. Category Vertical Bar Chart (X: Category, Y: Amount)
         self.cat_canvas.figure.clear()
         if cat_stats:
             ax = self.cat_canvas.figure.add_subplot(111)
             self.style_axes(ax)
             labels = [row[0] for row in cat_stats]
             values = [row[1] for row in cat_stats]
-            bars = ax.barh(labels, values, color='#1a73e8', height=0.6, alpha=0.9)
-            ax.set_title(f"{self.month}월 항목별 지출 (단위: 원)", pad=20, fontsize=12, fontweight='bold', color='#202124')
+            
+            bars = ax.bar(labels, values, color='#1a73e8', width=0.6, alpha=0.9)
+            ax.set_title(f"{self.month}월 항목별 지출", pad=20, fontsize=12, fontweight='bold', color='#202124')
+            
+            # Rotate X labels if they are long
+            plt.setp(ax.get_xticklabels(), rotation=30, horizontalalignment='right')
+            
+            # Add value labels on top of bars
             for bar in bars:
-                width = bar.get_width()
-                ax.text(width, bar.get_y() + bar.get_height()/2, f' {int(width):,}', va='center', fontsize=9, color='#1a73e8', fontweight='bold')
-            ax.xaxis.grid(True, linestyle='--', alpha=0.5, color='#e8eaed')
-            ax.yaxis.grid(False)
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height, f'{int(height):,}',
+                        ha='center', va='bottom', fontsize=9, color='#1a73e8', fontweight='bold')
+            
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#e8eaed')
+            ax.xaxis.grid(False)
         self.cat_canvas.draw()
 
         # 3. Daily Trends Bar Chart

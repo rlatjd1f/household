@@ -42,7 +42,16 @@ QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px s
 QPushButton#SaveBtn { font-size: 16px; background: transparent; border: none; }
 QPushButton#SaveBtn:hover { background-color: #f1f3f4; border-radius: 15px; }
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; }
-QComboBox QAbstractItemView { background-color: #ffffff; color: #202124; border: 1px solid #dadce0; selection-background-color: #e8f0fe; selection-color: #1a73e8; outline: none; }
+QComboBox QAbstractItemView { 
+    background-color: #ffffff; 
+    color: #202124; 
+    border: 1px solid #dadce0; 
+    selection-background-color: #e8f0fe; 
+    selection-color: #1a73e8; 
+    outline: none;
+    padding: 0px;
+    margin: 0px;
+}
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #dadce0; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #f1f3f4; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #5f6368; width: 0; height: 0; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #1a73e8; }
@@ -73,7 +82,16 @@ QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px s
 QPushButton#SaveBtn { font-size: 16px; background: transparent; border: none; }
 QPushButton#SaveBtn:hover { background-color: #3c4043; border-radius: 15px; }
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
-QComboBox QAbstractItemView { background-color: #2d2e30; color: #e8eaed; border: 1px solid #5f6368; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; }
+QComboBox QAbstractItemView { 
+    background-color: #2d2e30; 
+    color: #e8eaed; 
+    border: 1px solid #5f6368; 
+    selection-background-color: #3c4043; 
+    selection-color: #8ab4f8; 
+    outline: none;
+    padding: 0px;
+    margin: 0px;
+}
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #5f6368; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #35363a; }
 QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #9aa0a6; width: 0; height: 0; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #8ab4f8; }

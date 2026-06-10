@@ -97,7 +97,6 @@ class LedgerSpreadsheet(QTableWidget):
                 item.setText("0")
             self.blockSignals(False)
 
-        # Mark row as modified
         self.set_save_status(row, False)
 
     def set_save_status(self, row, is_saved):
@@ -109,7 +108,6 @@ class LedgerSpreadsheet(QTableWidget):
     def save_row_to_db(self, row):
         if self.signalsBlocked() or row < 0 or row >= self.rowCount(): return
         
-        # Block sorting during save/ID update
         sorting_was_enabled = self.isSortingEnabled()
         self.setSortingEnabled(False)
         
@@ -143,7 +141,7 @@ class LedgerSpreadsheet(QTableWidget):
                 update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             else:
                 if date:
-                    new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                    new_id = add_ledger_entry(self.ledger_tab.hid, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
                     if new_id:
                         self.blockSignals(True)
                         self.setItem(row, 0, QTableWidgetItem(str(new_id)))
@@ -165,12 +163,15 @@ class LedgerSpreadsheet(QTableWidget):
 
     def get_int(self, row, col):
         text = self.get_val(row, col).replace(',', '')
-        try: return int(text)
-        except: return 0
+        try:
+            return int(text)
+        except:
+            return 0
 
 class LedgerTab(QWidget):
-    def __init__(self, month):
+    def __init__(self, hid=None, month=1):
         super().__init__()
+        self.hid = hid
         self.month = month
         self.year = 2026
         self.init_ui()
@@ -226,6 +227,7 @@ class LedgerTab(QWidget):
         del_btn = QPushButton("- 삭제")
         del_btn.setObjectName("DeleteBtn")
         del_btn.clicked.connect(lambda chk, tbl=table: self.delete_row(tbl))
+        
         btns.addWidget(add_btn)
         btns.addWidget(del_btn)
         btns.addStretch()
@@ -238,20 +240,20 @@ class LedgerTab(QWidget):
         for row in range(table.rowCount()):
             match = False
             for col in range(1, table.columnCount() - 1):
-                val = table.get_val(row, col).lower()
-                if text.lower() in val:
+                if text.lower() in table.get_val(row, col).lower():
                     match = True
                     break
             table.setRowHidden(row, not match)
         self.refresh_summary()
 
     def refresh_data(self):
+        if self.hid is None: return
         self.income_table.setSortingEnabled(False)
         self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
         self.expense_table.blockSignals(True)
         
-        entries = get_ledger_entries(self.year, self.month)
+        entries = get_ledger_entries(self.hid, self.year, self.month)
         self.income_table.setRowCount(0)
         self.expense_table.setRowCount(0)
         
@@ -259,16 +261,16 @@ class LedgerTab(QWidget):
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
                 self.expense_table.insertRow(row)
-                amt_formatted = format(e[5], ',')
-                data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], amt_formatted, e[7], e[6]]
-                for i, val in enumerate(data): self.set_table_item(self.expense_table, row, i, val)
+                data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], format(e[5], ','), e[7], e[6]]
+                for i, val in enumerate(data):
+                    self.set_table_item(self.expense_table, row, i, val)
                 self.add_save_button(self.expense_table, row, True)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
-                amt_formatted = format(e[5], ',')
-                data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
-                for i, val in enumerate(data): self.set_table_item(self.income_table, row, i, val)
+                data = [str(e[0]), e[1], e[9], e[10], format(e[5], ','), e[7]]
+                for i, val in enumerate(data):
+                    self.set_table_item(self.income_table, row, i, val)
                 self.add_save_button(self.income_table, row, True)
                 
         self.income_table.blockSignals(False)
@@ -284,22 +286,24 @@ class LedgerTab(QWidget):
         
         amt_col = 6 if table.entry_type == "지출" else 4
         combos = {"지출": {2: "결제수단", 3: "수단명", 4: "소비_대", 5: "소비_중"}, "수입": {2: "소득_대", 3: "소득_중"}}
-        etype = table.entry_type
         
-        if col in combos[etype]:
+        if col in combos[table.entry_type]:
             item = QTableWidgetItem(val or "")
             table.setItem(row, col, item)
-            
             combo = StyledComboBox(row=row, col=col, spreadsheet=table)
             combo.setEditable(True)
-            self.populate_combo(combo, combos[etype][col], table, row, col)
+            self.populate_combo(combo, combos[table.entry_type][col], table, row, col)
             combo.setCurrentText(val or "")
             
-            if etype == "지출":
-                if col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "수단명", t))
-                elif col == 4: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
-                else: combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
-            elif etype == "수입" and col == 2: 
+            et = table.entry_type
+            if et == "지출":
+                if col == 2:
+                    combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "수단명", t))
+                elif col == 4:
+                    combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
+                else:
+                    combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
+            elif et == "수입" and col == 2:
                 combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "소득_중", t))
             else:
                 combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
@@ -311,19 +315,17 @@ class LedgerTab(QWidget):
             table.setItem(row, col, QTableWidgetItem(val or ""))
 
     def add_save_button(self, table, row, is_saved=True):
-        save_col = table.columnCount() - 1
         btn = QPushButton("✅" if is_saved else "❓")
         btn.setObjectName("SaveBtn")
-        # Ensure row is found dynamically for sorting compatibility
-        btn.clicked.connect(lambda: table.save_row_to_db(table.indexAt(btn.pos()).row()))
-        table.setCellWidget(row, save_col, btn)
+        btn.clicked.connect(lambda: table.save_row_to_db(table.indexAt(table.sender().pos()).row()))
+        table.setCellWidget(row, table.columnCount() - 1, btn)
 
     def handle_combo_change(self, table, row, col, child_col, ctype, text):
-        # We must find the visual row again because sorting might have happened
-        visual_row = table.indexAt(table.sender().pos()).row()
+        sender = self.sender()
+        if not sender: return
+        visual_row = table.indexAt(sender.pos()).row()
         item = table.item(visual_row, col)
         if item: item.setText(text)
-        
         table.set_save_status(visual_row, False)
         if child_col is not None:
             self.refresh_child_combo(table, visual_row, child_col, ctype, text)
@@ -334,10 +336,14 @@ class LedgerTab(QWidget):
             child_combo.blockSignals(True)
             child_combo.clear()
             from database import get_categories
-            if ctype == "수단명": items = [c[3] for c in get_categories("결제수단") if c[2] == parent_val]
-            elif ctype == "소비_중": items = [c[3] for c in get_categories("소비") if c[2] == parent_val]
-            elif ctype == "소득_중": items = [c[3] for c in get_categories("소득") if c[2] == parent_val]
-            else: items = []
+            if ctype == "수단명":
+                items = [c[3] for c in get_categories(self.hid, "결제수단") if c[2] == parent_val]
+            elif ctype == "소비_중":
+                items = [c[3] for c in get_categories(self.hid, "소비") if c[2] == parent_val]
+            elif ctype == "소득_중":
+                items = [c[3] for c in get_categories(self.hid, "소득") if c[2] == parent_val]
+            else:
+                items = []
             child_combo.addItems(items)
             child_combo.setCurrentIndex(-1)
             child_item = table.item(row, child_col)
@@ -346,19 +352,23 @@ class LedgerTab(QWidget):
 
     def populate_combo(self, combo, ctype, table, row, col):
         from database import get_categories
-        if ctype == "결제수단": items = sorted(list(set(c[2] for c in get_categories("결제수단"))))
+        if ctype == "결제수단":
+            items = sorted(list(set(c[2] for c in get_categories(self.hid, "결제수단"))))
         elif ctype == "수단명":
             p = table.get_val(row, 2)
-            items = [c[3] for c in get_categories("결제수단") if c[2] == p]
-        elif ctype == "소비_대": items = sorted(list(set(c[2] for c in get_categories("소비"))))
+            items = [c[3] for c in get_categories(self.hid, "결제수단") if c[2] == p]
+        elif ctype == "소비_대":
+            items = sorted(list(set(c[2] for c in get_categories(self.hid, "소비"))))
         elif ctype == "소비_중":
             p = table.get_val(row, 4)
-            items = [c[3] for c in get_categories("소비") if c[2] == p]
-        elif ctype == "소득_대": items = sorted(list(set(c[2] for c in get_categories("소득"))))
+            items = [c[3] for c in get_categories(self.hid, "소비") if c[2] == p]
+        elif ctype == "소득_대":
+            items = sorted(list(set(c[2] for c in get_categories(self.hid, "소득"))))
         elif ctype == "소득_중":
             p = table.get_val(row, 2)
-            items = [c[3] for c in get_categories("소득") if c[2] == p]
-        else: items = []
+            items = [c[3] for c in get_categories(self.hid, "소득") if c[2] == p]
+        else:
+            items = []
         combo.addItems(items)
 
     def add_row(self, table):
@@ -371,8 +381,7 @@ class LedgerTab(QWidget):
         for col in range(2, table.columnCount() - 1):
             dv = "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else ""
             self.set_table_item(table, row, col, dv)
-        
-        self.add_save_button(table, row, False) # New row is unsaved
+        self.add_save_button(table, row, False)
         table.scrollToBottom()
         table.blockSignals(False)
         table.setSortingEnabled(True)
@@ -381,21 +390,22 @@ class LedgerTab(QWidget):
         row = table.currentRow()
         if row < 0: return
         id_item = table.item(row, 0)
-        if id_item and id_item.text(): delete_ledger_entry(int(id_item.text()))
+        if id_item and id_item.text():
+            delete_ledger_entry(int(id_item.text()))
         table.removeRow(row)
         self.refresh_summary()
 
     def refresh_summary(self):
         from database import get_detailed_budgets
-        budget_data = get_detailed_budgets(self.year)
+        budget_data = get_detailed_budgets(self.hid, self.year)
         monthly_total_budget = 0
         for cat_data in budget_data.values():
             monthly_total_budget += cat_data.get(self.month, 0)
-
         def sum_table(table, col):
             total = 0
             for r in range(table.rowCount()):
-                if not table.isRowHidden(r): total += table.get_int(r, col)
+                if not table.isRowHidden(r):
+                    total += table.get_int(r, col)
             return total
         exp = sum_table(self.expense_table, 6)
         remaining = monthly_total_budget - exp
@@ -404,13 +414,13 @@ class LedgerTab(QWidget):
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"
         from database import get_categories
-        for c in get_categories(db_type):
+        for c in get_categories(self.hid, db_type):
             if c[2] == p and c[3] == s: return c[0]
         return None
 
     def resolve_asset_id(self, etype, pm, an):
         from database import get_categories
         if etype == "지출":
-            for c in get_categories("결제수단"):
+            for c in get_categories(self.hid, "결제수단"):
                 if c[2] == pm and c[3] == an: return c[0]
         return None

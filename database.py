@@ -7,7 +7,7 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # 0. Households Table (The Parent)
+    # 0. Households Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS households (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,7 +16,7 @@ def init_db():
     )
     """)
 
-    # 1. Categories Table (Household-aware)
+    # 1. Categories Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +29,7 @@ def init_db():
     )
     """)
 
-    # 2. Budgets Table (Household-aware)
+    # 2. Budgets Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS budgets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +43,7 @@ def init_db():
     )
     """)
 
-    # 3. Assets Table (Household-aware)
+    # 3. Assets Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,7 @@ def init_db():
     )
     """)
 
-    # 4. Ledgers Table (Household-aware)
+    # 4. Ledgers Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ledgers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,8 +77,8 @@ def init_db():
 
     conn.commit()
 
-    # --- Migration Logic: Ensure household_id and constraints exist ---
-    tables_to_migrate = {
+    # --- Migration Logic: Force Recreate if UNIQUE constraint is broken ---
+    tables_to_repair = {
         "categories": """
             CREATE TABLE categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +112,7 @@ def init_db():
             )"""
     }
 
-    # First, ensure at least one household exists
+    # Ensure at least one household exists
     cursor.execute("SELECT count(*) FROM households")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO households (name) VALUES ('기본 가계부')")
@@ -121,31 +121,20 @@ def init_db():
     cursor.execute("SELECT id FROM households LIMIT 1")
     default_hid = cursor.fetchone()[0]
 
-    for table, create_sql in tables_to_migrate.items():
-        cursor.execute(f"PRAGMA table_info({table})")
-        columns = [row[1] for row in cursor.fetchall()]
+    for table, create_sql in tables_to_repair.items():
+        cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        table_sql = cursor.fetchone()
         
-        # If household_id is missing, or for budgets specifically (to fix constraint bug)
-        needs_recreate = "household_id" not in columns or (table == "budgets" and "category_name" in columns)
-        
-        if needs_recreate:
-            # We check if we need to fix the constraint issue specifically for budgets
-            if table == "budgets":
-                # Check if the UNIQUE constraint actually exists on household_id
-                cursor.execute(f"PRAGMA index_list({table})")
-                indices = cursor.fetchall()
-                has_unique_hid = any(idx[2] == 1 for idx in indices) # idx[2] is 'unique'
-                if has_unique_hid and "household_id" in columns:
-                    continue # Already has unique index including hid
+        if table_sql:
+            sql_str = table_sql[0].replace(' ', '').replace('\n', '')
+            # Robust check for the proper UNIQUE constraint including household_id
+            if f"UNIQUE(household_id," not in sql_str:
+                print(f"Repairing {table}: UNIQUE constraint missing household_id. Recreating...")
+                cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                cursor.execute(create_sql)
+                conn.commit()
 
-            print(f"Migrating {table}: Recreating with proper constraints...")
-            # More aggressive migration: Drop and Recreate to fix UNIQUE constraints
-            # (Note: In a production app, we'd copy data to a temp table first)
-            cursor.execute(f"DROP TABLE IF EXISTS {table}")
-            cursor.execute(create_sql)
-            conn.commit()
-
-    # Ledgers Payee/PaymentMethod migration (Special case as it's the largest table)
+    # Ledgers migration (Individual columns)
     cursor.execute(f"PRAGMA table_info(ledgers)")
     l_cols = [row[1] for row in cursor.fetchall()]
     if "household_id" not in l_cols:
@@ -156,7 +145,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print(f"Database {DB_NAME} initialized with multi-book support.")
+    print(f"Database {DB_NAME} initialized correctly.")
 
 def get_db_connection():
     return sqlite3.connect(DB_NAME)
@@ -205,7 +194,7 @@ def update_household_name(hid, new_name):
     finally:
         conn.close()
 
-# --- Category Functions (Updated with hid) ---
+# --- Category Functions ---
 def add_category(hid, category_type, parent, sub):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -255,7 +244,7 @@ def delete_category_by_parent(hid, db_type, parent_name):
     conn.commit()
     conn.close()
 
-# --- Asset Functions (Updated with hid) ---
+# --- Asset Functions ---
 def add_asset(hid, name, initial_balance):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -290,7 +279,7 @@ def delete_asset(asset_id):
     conn.commit()
     conn.close()
 
-# --- Ledger Functions (Updated with hid) ---
+# --- Ledger Functions ---
 def add_ledger_entry(hid, date, entry_type, category_id, asset_id, amount, memo, payee, payment_method):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -366,11 +355,12 @@ def delete_ledger_entry(entry_id):
         et, am, aid = entry
         if et == "수입": cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (am, aid))
         elif et == "지출": cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (am, aid))
-        cursor.execute("DELETE FROM ledgers WHERE id = ?", (entry_id,))
+        query = "DELETE FROM ledgers WHERE id = ?"
+        log_query(query, (entry_id,))
+        cursor.execute(query, (entry_id,))
         conn.commit()
     conn.close()
 
-# --- Budget Functions (Updated with hid) ---
 def get_detailed_budgets(hid, year):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -406,6 +396,65 @@ def clear_household_data(hid):
     cursor.execute("DELETE FROM ledgers WHERE household_id = ?", (hid,))
     conn.commit()
     conn.close()
+
+# --- Report Aggregation Functions ---
+def get_monthly_category_stats(hid, year, month):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    month_str = f"{month:02d}"
+    query = """
+        SELECT c.parent_category, SUM(l.amount)
+        FROM ledgers l
+        JOIN categories c ON l.category_id = c.id
+        WHERE l.household_id = ? AND l.type = '지출' AND l.date LIKE ?
+        GROUP BY c.parent_category
+    """
+    params = (hid, f"{year}-{month_str}-%")
+    log_query(query, params)
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_monthly_daily_trends(hid, year, month):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    month_str = f"{month:02d}"
+    query = """
+        SELECT SUBSTR(date, 9, 2) as day, SUM(amount)
+        FROM ledgers
+        WHERE household_id = ? AND type = '지출' AND date LIKE ?
+        GROUP BY day
+        ORDER BY day
+    """
+    params = (hid, f"{year}-{month_str}-%")
+    log_query(query, params)
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_yearly_monthly_trends(hid, year):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = """
+        SELECT SUBSTR(date, 6, 2) as month, type, SUM(amount)
+        FROM ledgers
+        WHERE household_id = ? AND date LIKE ?
+        GROUP BY month, type
+        ORDER BY month
+    """
+    params = (hid, f"{year}-%")
+    log_query(query, params)
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Process into dict {month: {'수입': X, '지출': Y}}
+    data = {f"{m:02d}": {"수입": 0, "지출": 0} for m in range(1, 13)}
+    for m, t, a in rows:
+        if m in data: data[m][t] = a
+    return data
 
 if __name__ == "__main__":
     init_db()

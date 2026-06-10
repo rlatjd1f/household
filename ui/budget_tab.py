@@ -17,8 +17,9 @@ class NumericDelegate(QStyledItemDelegate):
         editor.setText(text)
 
 class BudgetTab(QWidget):
-    def __init__(self):
+    def __init__(self, hid=None):
         super().__init__()
+        self.hid = hid
         self.categories = [
             "🏠 고정지출(주거)", "💰 이자", "🏘️ 월세", "🍔 식비", 
             "🚌 자동차·교통", "💇 개인관리", "🎬 문화생활", "🛍️ 쇼핑", 
@@ -53,15 +54,15 @@ class BudgetTab(QWidget):
         top_layout.addWidget(save_btn)
         layout.addLayout(top_layout)
 
-        # Budget Table (Rows: Categories + Total, Cols: 항목 + 일괄적용 + 1-12월)
+        # Budget Table
         self.table = QTableWidget(len(self.categories) + 1, 14)
         headers = ["항목", "일괄 적용"] + [f"{i}월" for i in range(1, 13)]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # 항목
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # 일괄적용
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         for i in range(2, 14):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         
@@ -73,47 +74,30 @@ class BudgetTab(QWidget):
             self.table.setItemDelegateForColumn(i, delegate)
         
         for i, cat in enumerate(self.categories):
-            # Category Name (Col 0)
             item = QTableWidgetItem(cat)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 0, item)
             
-            # Batch Apply Button (Col 1)
             batch_btn = QPushButton("일괄 적용")
             batch_btn.setObjectName("BatchBtn")
-            # Explicit styling for visibility
             batch_btn.setStyleSheet("""
-                QPushButton#BatchBtn {
-                    background-color: #e8f0fe;
-                    color: #1a73e8;
-                    border: 1px solid #1a73e8;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }
-                QPushButton#BatchBtn:hover {
-                    background-color: #1a73e8;
-                    color: white;
-                }
+                QPushButton#BatchBtn { background-color: #e8f0fe; color: #1a73e8; border: 1px solid #1a73e8; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; }
+                QPushButton#BatchBtn:hover { background-color: #1a73e8; color: white; }
             """)
             batch_btn.clicked.connect(lambda chk, r=i: self.handle_batch_apply(r))
             self.table.setCellWidget(i, 1, batch_btn)
             
-            # Month Cells (Col 2-13)
             for m in range(2, 14):
                 cell = QTableWidgetItem("0")
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(i, m, cell)
 
-        # Total Row
         total_row = len(self.categories)
         total_item = QTableWidgetItem("✨ 월별 총합")
         total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         total_item.setBackground(QColor("#f1f3f4") if not self.is_dark() else QColor("#3c4043"))
         self.table.setItem(total_row, 0, total_item)
         
-        # Empty cell for 1st column in total row
         empty_item = QTableWidgetItem("")
         empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(total_row, 1, empty_item)
@@ -137,20 +121,16 @@ class BudgetTab(QWidget):
                 val = val.replace(',', '').strip()
                 val = int(val) if val else 0
             return f"{val:,}"
-        except:
-            return "0"
+        except: return "0"
 
     def handle_item_changed(self, item):
         col = item.column()
         if col < 2: return 
         if item.row() == len(self.categories): return
-        
         self.table.blockSignals(True)
         text = item.text().replace(',', '')
-        if text.isdigit():
-            item.setText(self.format_num(int(text)))
-        else:
-            item.setText("0")
+        if text.isdigit(): item.setText(self.format_num(int(text)))
+        else: item.setText("0")
         self.table.blockSignals(False)
         self.update_month_total(col)
 
@@ -163,7 +143,6 @@ class BudgetTab(QWidget):
                 val_str = item.text().replace(',', '').strip()
                 try: total += int(val_str)
                 except: pass
-        
         total_item = self.table.item(len(self.categories), col)
         total_item.setText(self.format_num(total))
         total_item.setForeground(QColor("#1a73e8") if not self.is_dark() else QColor("#8ab4f8"))
@@ -175,17 +154,14 @@ class BudgetTab(QWidget):
         if ok:
             self.table.blockSignals(True)
             formatted_amt = self.format_num(amount)
-            for m in range(2, 14):
-                self.table.item(row, m).setText(formatted_amt)
+            for m in range(2, 14): self.table.item(row, m).setText(formatted_amt)
             self.table.blockSignals(False)
-            # Update all totals
-            for m in range(2, 14):
-                self.update_month_total(m)
+            for m in range(2, 14): self.update_month_total(m)
 
     def load_data(self):
+        if self.hid is None: return
         year = self.year_spin.value()
-        data = get_detailed_budgets(year) 
-        
+        data = get_detailed_budgets(self.hid, year) 
         self.table.blockSignals(True)
         for row, cat in enumerate(self.categories):
             cat_clean = cat.split(' ')[1] 
@@ -193,12 +169,11 @@ class BudgetTab(QWidget):
             for month in range(1, 13):
                 amt = cat_data.get(month, 0)
                 self.table.item(row, month+1).setText(self.format_num(amt))
-        
-        for m in range(2, 14):
-            self.update_month_total(m)
+        for m in range(2, 14): self.update_month_total(m)
         self.table.blockSignals(False)
 
     def handle_save(self):
+        if self.hid is None: return
         year = self.year_spin.value()
         try:
             for row, cat in enumerate(self.categories):
@@ -207,11 +182,8 @@ class BudgetTab(QWidget):
                     item = self.table.item(row, month+1)
                     amt_str = item.text().replace(',', '').strip()
                     amt = int(amt_str) if amt_str else 0
-                    save_detailed_budget(year, month, cat_clean, amt)
-            
+                    save_detailed_budget(self.hid, year, month, cat_clean, amt)
             QMessageBox.information(self, "완료", f"{year}년 항목별 예산이 저장되었습니다.")
             self.load_data()
-        except ValueError:
-            QMessageBox.warning(self, "오류", "금액은 숫자만 입력 가능합니다.")
-        except Exception as e:
-            QMessageBox.critical(self, "오류", f"저장 중 오류 발생: {e}")
+        except ValueError: QMessageBox.warning(self, "오류", "금액은 숫자만 입력 가능합니다.")
+        except Exception as e: QMessageBox.critical(self, "오류", f"저장 중 오류 발생: {e}")

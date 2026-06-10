@@ -2,12 +2,13 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget,
                              QTreeWidgetItem, QLineEdit, QPushButton, QLabel, 
                              QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout)
 from PyQt6.QtCore import Qt
-from database import add_category, get_categories, delete_category
+from database import add_category, get_categories, delete_category, delete_category_by_parent
 
 class CategorySection(QFrame):
     """A hierarchical tree section for category management."""
-    def __init__(self, title, db_type, parent_tab):
+    def __init__(self, hid, title, db_type, parent_tab):
         super().__init__()
+        self.hid = hid
         self.title = title
         self.db_type = db_type
         self.parent_tab = parent_tab
@@ -30,7 +31,7 @@ class CategorySection(QFrame):
 
         # Tree Widget (Hierarchical)
         self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True) # Hide the "분류명" header to solve black background bug
+        self.tree.setHeaderHidden(True) 
         self.tree.setIndentation(20)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.tree.itemClicked.connect(self.handle_selection_changed)
@@ -43,24 +44,24 @@ class CategorySection(QFrame):
         input_layout = QHBoxLayout()
         self.parent_input = QLineEdit()
         self.parent_input.setPlaceholderText("대분류")
-        self.parent_input.returnPressed.connect(self.handle_add) # Add on Enter
+        self.parent_input.returnPressed.connect(self.handle_add) 
         self.sub_input = QLineEdit()
         self.sub_input.setPlaceholderText("중분류")
-        self.sub_input.returnPressed.connect(self.handle_add) # Add on Enter
+        self.sub_input.returnPressed.connect(self.handle_add) 
         
         self.add_btn = QPushButton("추가")
         self.add_btn.setFixedWidth(80)
         self.add_btn.clicked.connect(self.handle_add)
         
-        self.del_btn = QPushButton("삭제")
-        self.del_btn.setObjectName("DeleteBtn")
-        self.del_btn.setFixedWidth(80)
-        self.del_btn.clicked.connect(self.handle_delete)
+        del_btn = QPushButton("삭제")
+        del_btn.setObjectName("DeleteBtn")
+        del_btn.setFixedWidth(80)
+        del_btn.clicked.connect(self.handle_delete)
 
         input_layout.addWidget(self.parent_input)
         input_layout.addWidget(self.sub_input)
         input_layout.addWidget(self.add_btn)
-        input_layout.addWidget(self.del_btn)
+        input_layout.addWidget(del_btn)
         layout.addLayout(input_layout)
 
     def eventFilter(self, source, event):
@@ -72,10 +73,9 @@ class CategorySection(QFrame):
 
     def load_data(self):
         self.tree.blockSignals(True)
-        categories = get_categories(self.db_type)
+        categories = get_categories(self.hid, self.db_type)
         self.tree.clear()
         
-        # Group by parent
         grouped = {}
         for cat in categories:
             parent = cat[2]
@@ -84,23 +84,18 @@ class CategorySection(QFrame):
             grouped[parent].append(cat)
 
         for parent_name, subs in sorted(grouped.items()):
-            # Parent Item Styling
             parent_item = QTreeWidgetItem(self.tree, [f"📂 {parent_name}"])
             parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "parent", "name": parent_name})
-            
-            # Make Parent Font Bold
             font = parent_item.font(0)
             font.setBold(True)
             parent_item.setFont(0, font)
             
             for sub in sorted(subs, key=lambda x: x[3]):
-                # Sub Item Styling with visual branch prefix
                 sub_item = QTreeWidgetItem(parent_item, [f"└ {sub[3]}"])
                 sub_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "sub", "id": sub[0], "parent": parent_name, "name": sub[3]})
             
             parent_item.setExpanded(True)
         
-        # NOTE: We no longer clear parent_input here to allow continuous entry
         self.sub_input.clear()
         self.add_btn.setEnabled(True)
         self.tree.blockSignals(False)
@@ -108,7 +103,6 @@ class CategorySection(QFrame):
     def handle_selection_changed(self, item, column):
         if not item: return
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        
         if data["type"] == "parent":
             self.parent_input.setText(data["name"])
             self.sub_input.clear()
@@ -116,7 +110,7 @@ class CategorySection(QFrame):
         else:
             self.parent_input.setText(data["parent"])
             self.sub_input.setText(data["name"])
-            self.add_btn.setEnabled(False) # Disable Add when a sub-item is selected
+            self.add_btn.setEnabled(False)
 
     def handle_add(self):
         parent = self.parent_input.text().strip()
@@ -125,10 +119,10 @@ class CategorySection(QFrame):
             QMessageBox.warning(self, "경고", "대분류와 중분류를 모두 입력하세요.")
             return
 
-        if add_category(self.db_type, parent, sub):
+        if add_category(self.hid, self.db_type, parent, sub):
             self.sub_input.clear()
             self.load_data()
-            self.sub_input.setFocus() # Keep focus for continuous entry
+            self.sub_input.setFocus() 
         else:
             QMessageBox.warning(self, "오류", "이미 존재하는 항목이거나 오류가 발생했습니다.")
 
@@ -139,40 +133,24 @@ class CategorySection(QFrame):
             return
 
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        
         if data["type"] == "parent":
-            # Delete entire parent (Keep alert for bulk deletion safety)
             confirm = QMessageBox.question(self, "확인", f"대분류 '{data['name']}'와(과) 소속된 모든 중분류를 삭제하시겠습니까?", 
                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if confirm == QMessageBox.StandardButton.Yes:
-                self.delete_parent_category(data["name"])
+                delete_category_by_parent(self.hid, self.db_type, data["name"])
                 self.load_data()
         else:
-            # Delete specific sub (Remove alert for faster workflow)
             delete_category(data["id"])
             self.load_data()
 
-    def delete_parent_category(self, parent_name):
-        delete_parent_category_db(self.db_type, parent_name)
-
-def delete_parent_category_db(db_type, parent_name):
-    import sqlite3
-    from database import DB_NAME
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM categories WHERE type = ? AND parent_category = ?", (db_type, parent_name))
-    conn.commit()
-    conn.close()
-
 class SettingsTab(QWidget):
-    def __init__(self):
+    def __init__(self, hid=None):
         super().__init__()
+        self.hid = hid
         self.init_ui()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
-        
-        # Scroll Area for all sections
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -183,21 +161,18 @@ class SettingsTab(QWidget):
         self.grid_layout.setSpacing(15)
         self.grid_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Define categories and add in 1x4 horizontal layout
         self.sections = [
-            CategorySection("💸 소비 항목 관리", "소비", self),
-            CategorySection("💰 소득 항목 관리", "소득", self),
-            CategorySection("💳 결제수단 관리", "결제수단", self),
-            CategorySection("🏦 자본/부채 관리", "자본", self)
+            CategorySection(self.hid, "💸 소비 항목 관리", "소비", self),
+            CategorySection(self.hid, "💰 소득 항목 관리", "소득", self),
+            CategorySection(self.hid, "💳 결제수단 관리", "결제수단", self),
+            CategorySection(self.hid, "🏦 자본/부채 관리", "자본", self)
         ]
 
         for i, section in enumerate(self.sections):
             self.grid_layout.addWidget(section, 0, i)
         
-        # Ensure items fill the vertical space
         self.grid_layout.setRowStretch(0, 1)
-        for i in range(4):
-            self.grid_layout.setColumnStretch(i, 1)
+        for i in range(4): self.grid_layout.setColumnStretch(i, 1)
         
         scroll.setWidget(content_widget)
         main_layout.addWidget(scroll)
