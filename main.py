@@ -1,6 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
-                             QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, QLabel)
+                             QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
+                             QLabel, QPushButton)
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont
 from database import init_db
