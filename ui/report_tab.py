@@ -1,13 +1,18 @@
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.ticker import FuncFormatter
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, 
                              QScrollArea, QComboBox, QTableWidget, QTableWidgetItem, 
-                             QHeaderView, QTextBrowser)
-from PyQt6.QtCore import Qt
+                             QHeaderView, QTextBrowser, QApplication)
+from PyQt6.QtCore import Qt, QTimer
 from database import (get_monthly_category_stats, get_monthly_daily_trends, 
                       get_yearly_monthly_trends, get_detailed_budgets, get_ledger_entries)
 import datetime
 import platform
+
+# --- Helper for Comma Formatting on Axes ---
+def comma_formatter(x, pos):
+    return f'{int(x):,}'
 
 # --- Font Setup for Korean ---
 plt.rcParams['axes.unicode_minus'] = False
@@ -68,7 +73,7 @@ class MonthlyReportTab(QWidget):
         self.layout = QVBoxLayout(content)
         self.layout.setSpacing(20)
 
-        # 1. KPI Dash Area (Fixed vs Variable)
+        # 1. KPI Dash Area
         kpi_layout = QHBoxLayout()
         self.card_variable = ReportSection("⚠️ 변동비 집중 모니터링")
         self.card_budget = ReportSection("📉 예산 집행률 디테일")
@@ -78,30 +83,31 @@ class MonthlyReportTab(QWidget):
 
         # 2. Center Area: Category Chart + Top Spend Table
         center_layout = QHBoxLayout()
-        self.chart_section = ReportSection("📊 카테고리별 지출 현황 (클릭 가능)")
-        self.cat_canvas = FigureCanvas(plt.Figure(figsize=(6, 5), tight_layout=True))
+        self.chart_section = ReportSection("📊 카테고리별 지출 현황")
+        self.cat_canvas = FigureCanvas(plt.Figure(figsize=(7, 5), tight_layout=True))
         self.chart_section.content_layout.addWidget(self.cat_canvas)
         
-        self.table_section = ReportSection("✨ 이달의 주요 소비처 (Top Spending)")
+        self.table_section = ReportSection("✨ 이달의 주요 소비처 (Top 10)")
         self.top_table = QTableWidget(0, 5)
         self.top_table.setHorizontalHeaderLabels(["날짜", "카테고리", "사용처", "결제수단", "금액"])
         self.top_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.top_table.verticalHeader().setVisible(False)
+        self.top_table.setStyleSheet("font-size: 11px;")
         self.table_section.content_layout.addWidget(self.top_table)
         
-        center_layout.addWidget(self.chart_section, 3)
-        center_layout.addWidget(self.table_section, 4)
+        center_layout.addWidget(self.chart_section, 4)
+        center_layout.addWidget(self.table_section, 3)
         self.layout.addLayout(center_layout)
 
         # 3. Bottom Area: Daily Line Chart + AI Insights
         bottom_layout = QHBoxLayout()
-        self.daily_section = ReportSection("📅 일별 지출 추이 (Line)")
+        self.daily_section = ReportSection("📅 일별 지출 추이")
         self.daily_canvas = FigureCanvas(plt.Figure(figsize=(8, 4), tight_layout=True))
         self.daily_section.content_layout.addWidget(self.daily_canvas)
         
         self.insight_section = ReportSection("💡 소비 패턴 분석 인사이트")
         self.insight_text = QTextBrowser()
-        self.insight_text.setOpenExternalLinks(True)
+        self.insight_text.setStyleSheet("background: transparent; border: none;")
         self.insight_section.content_layout.addWidget(self.insight_text)
         
         bottom_layout.addWidget(self.daily_section, 5)
@@ -116,9 +122,15 @@ class MonthlyReportTab(QWidget):
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#dadce0')
         ax.spines['bottom'].set_color('#dadce0')
-        ax.tick_params(axis='both', colors='#5f6368', labelsize=10)
+        ax.tick_params(axis='both', colors='#5f6368', labelsize=9)
         ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#e8eaed')
+        ax.set_axisbelow(True)
         ax.set_facecolor('none')
+        ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
+        ax.xaxis.set_major_formatter(FuncFormatter(comma_formatter))
+
+    def is_dark(self):
+        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
 
     def on_month_changed(self):
         self.month = self.month_combo.currentData()
@@ -126,21 +138,14 @@ class MonthlyReportTab(QWidget):
 
     def load_data(self):
         if self.hid is None: return
-        
-        # Data Retrieval
-        cat_stats = get_monthly_category_stats(self.hid, self.year, self.month)
+        cat_stats = sorted(get_monthly_category_stats(self.hid, self.year, self.month), key=lambda x: x[1], reverse=True)
         daily_trends = get_monthly_daily_trends(self.hid, self.year, self.month)
         ledger_entries = get_ledger_entries(self.hid, self.year, self.month)
         
-        # 1. KPI Cards (Simplified Fixed vs Variable logic)
-        # Assuming certain categories are fixed (Housing, Interest, etc.)
+        # 1. Update Cards
         fixed_cats = ["고정지출(주거)", "이자", "월세", "상환"]
-        total_fixed = 0
-        total_var = 0
-        for row in cat_stats:
-            if row[0] in fixed_cats: total_fixed += row[1]
-            else: total_var += row[1]
-        
+        total_fixed = sum(r[1] for r in cat_stats if r[0] in fixed_cats)
+        total_var = sum(r[1] for r in cat_stats if r[0] not in fixed_cats)
         total_exp = total_fixed + total_var
         
         self.card_variable.clear_content()
@@ -156,133 +161,101 @@ class MonthlyReportTab(QWidget):
         self.card_budget.content_layout.addWidget(QLabel(f"<span style='font-size:18px;'>예산 {monthly_budget:,}원 중 <b>{total_exp:,}원</b> 지출</span>"))
         self.card_budget.content_layout.addWidget(QLabel(f"결과: {diff_text}"))
 
-        # 2. Category Chart (Horizontal Bar for labels, X: Amount, Y: Category)
-        # Reverting to horizontal bar because it handles long Korean names best, but ensuring Y:Cat, X:Amt
+        # 2. Category Vertical Bar Chart (X: Category, Y: Amount)
         self.cat_canvas.figure.clear()
         if cat_stats:
             ax = self.cat_canvas.figure.add_subplot(111)
             self.style_axes(ax)
-            cat_stats_sorted = sorted(cat_stats, key=lambda x: x[1])
-            labels = [r[0] for r in cat_stats_sorted]
-            values = [r[1] for r in cat_stats_sorted]
+            ax.xaxis.set_major_formatter(plt.NullFormatter()) # Remove auto-formatter for X strings
             
-            bars = ax.barh(labels, values, color='#1a73e8', height=0.6, alpha=0.9)
-            ax.set_title(f"{self.month}월 지출 분포", pad=15, fontweight='bold')
-            ax.xaxis.grid(True, linestyle='--', alpha=0.3)
-            ax.yaxis.grid(False)
-            # Ensure labels are horizontal (matplotlib barh does this by default)
+            labels = [r[0] for r in cat_stats]
+            values = [r[1] for r in cat_stats]
+            bars = ax.bar(labels, values, color='#1a73e8', width=0.6, alpha=0.9)
+            ax.set_title(f"{self.month}월 항목별 지출", pad=15, fontweight='bold')
+            # Labels: Horizontal (0 degree)
+            plt.setp(ax.get_xticklabels(), rotation=0) 
+            # Values on top
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height, f'{int(height):,}', ha='center', va='bottom', fontsize=8, color='#1a73e8')
+            ax.yaxis.grid(True, linestyle='--', alpha=0.3)
+            ax.xaxis.grid(False)
         self.cat_canvas.draw()
 
         # 3. Top Spending Table
         self.top_table.setRowCount(0)
-        # Sort all ledger entries for this month by amount descending
         expense_entries = [e for e in ledger_entries if e[2] == "지출"]
-        top_5 = sorted(expense_entries, key=lambda x: x[5], reverse=True)[:10] # Show Top 10
-        for e in top_5:
-            row = self.top_table.rowCount()
-            self.top_table.insertRow(row)
-            # data: [date, cat, payee, payment, amount]
+        top_10 = sorted(expense_entries, key=lambda x: x[5], reverse=True)[:10]
+        for e in top_10:
+            row = self.top_table.rowCount(); self.top_table.insertRow(row)
             self.top_table.setItem(row, 0, QTableWidgetItem(e[1]))
             self.top_table.setItem(row, 1, QTableWidgetItem(f"{e[9]}>{e[10]}"))
             self.top_table.setItem(row, 2, QTableWidgetItem(e[7]))
             self.top_table.setItem(row, 3, QTableWidgetItem(e[8]))
             self.top_table.setItem(row, 4, QTableWidgetItem(format(e[5], ',')))
 
-        # 4. Daily Line Chart
+        # 4. Daily Trends Line Chart
         self.daily_canvas.figure.clear()
         if daily_trends:
             ax = self.daily_canvas.figure.add_subplot(111)
             self.style_axes(ax)
+            ax.xaxis.set_major_formatter(plt.ScalarFormatter()) # Correct formatter for day numbers
             days = [int(r[0]) for r in daily_trends]
             amts = [r[1] for r in daily_trends]
-            
-            # Full month array for line continuity
             ax.plot(days, amts, color='#1a73e8', marker='o', markersize=4, linewidth=2)
             ax.fill_between(days, amts, alpha=0.1, color='#1a73e8')
-            
-            # Average Line
-            avg_val = total_exp / 30 # Simple avg
+            avg_val = total_exp / 30
             ax.axhline(avg_val, color='#d93025', linestyle='--', alpha=0.5, label='평균 지출')
-            ax.legend()
-            ax.set_xticks(range(1, 32, 5))
+            ax.legend(); ax.set_xticks(range(1, 32, 5))
         self.daily_canvas.draw()
 
-        # 5. AI Insights (Mock logic based on data)
-        self.generate_insights(total_exp, total_var, top_5, daily_trends)
+        self.generate_insights(total_exp, total_var, top_10, daily_trends)
 
-    def generate_insights(self, total, var, top_5, trends):
-        html = "<div style='line-height:150%; font-size:13px; color:#3c4043;'>"
-        if not top_5:
+    def generate_insights(self, total, var, top_10, trends):
+        text_color = "#e8eaed" if self.is_dark() else "#3c4043"
+        html = f"<div style='line-height:160%; font-size:13px; color:{text_color};'>"
+        if not top_10:
             html += "<p>데이터가 부족하여 분석을 진행할 수 없습니다.</p>"
         else:
-            max_item = top_5[0]
+            max_item = top_10[0]
             html += f"<p>📍 지출이 가장 컸던 날은 <b>{max_item[1]}</b>이며, <b>{max_item[7]}</b>에서 {max_item[5]:,}원을 지출하셨습니다.</p>"
-            
-            # Find peak day
             if trends:
                 peak_day = sorted(trends, key=lambda x: x[1], reverse=True)[0]
                 html += f"<p>📅 {self.month}월 {peak_day[0]}일에 지출 피크가 발생했습니다. 해당 일의 소비 내역을 점검해 보세요.</p>"
-            
             var_ratio = (var / total * 100) if total > 0 else 0
-            if var_ratio > 50:
-                html += f"<p style='color:#d93025;'>⚠️ 변동비 비중이 {var_ratio:.1f}%로 높습니다. 불필요한 쇼핑이나 외식이 없었는지 확인이 필요합니다.</p>"
-            else:
-                html += "<p style='color:#1a73e8;'>✅ 변동비가 잘 통제되고 있습니다. 지금처럼 유지해 주세요!</p>"
-                
+            if var_ratio > 50: html += f"<p style='color:#d93025;'>⚠️ 변동비 비중이 {var_ratio:.1f}%로 높습니다. 불필요한 쇼핑이나 외식이 없었는지 확인이 필요합니다.</p>"
+            else: html += "<p style='color:#1a73e8;'>✅ 변동비가 잘 통제되고 있습니다. 지금처럼 유지해 주세요!</p>"
         html += "</div>"
         self.insight_text.setHtml(html)
 
 class YearlyReportTab(QWidget):
     def __init__(self, hid=None):
         super().__init__()
-        self.hid = hid
-        self.year = datetime.datetime.now().year
-        self.init_ui()
-        self.load_data()
+        self.hid = hid; self.year = datetime.datetime.now().year
+        self.init_ui(); self.load_data()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
-        
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget()
-        content.setObjectName("ScrollContent")
-        self.layout = QVBoxLayout(content)
-        self.layout.setSpacing(20)
-
-        # 1. Yearly Monthly Trend (Line Chart)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget(); content.setObjectName("ScrollContent"); self.layout = QVBoxLayout(content); self.layout.setSpacing(20)
         self.trend_section = ReportSection(f"📈 {self.year}년 수입/지출 추이")
         self.trend_canvas = FigureCanvas(plt.Figure(figsize=(10, 5), tight_layout=True))
-        self.trend_section.content_layout.addWidget(self.trend_canvas)
-        self.layout.addWidget(self.trend_section)
-
-        scroll.setWidget(content)
-        main_layout.addWidget(scroll)
+        self.trend_section.content_layout.addWidget(self.trend_canvas); self.layout.addWidget(self.trend_section)
+        scroll.setWidget(content); main_layout.addWidget(scroll)
 
     def load_data(self):
         if self.hid is None: return
-        
         trends = get_yearly_monthly_trends(self.hid, self.year)
-        
         self.trend_canvas.figure.clear()
         ax = self.trend_canvas.figure.add_subplot(111)
-        # Apply Material Style
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#dadce0')
-        ax.spines['bottom'].set_color('#dadce0')
+        ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#dadce0'); ax.spines['bottom'].set_color('#dadce0')
         ax.tick_params(axis='both', colors='#5f6368')
-        
-        months = sorted(trends.keys())
-        inc_data = [trends[m]["수입"] for m in months]
-        exp_data = [trends[m]["지출"] for m in months]
-        
+        ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
+        months = sorted(trends.keys()); inc_data = [trends[m]["수입"] for m in months]; exp_data = [trends[m]["지출"] for m in months]
         ax.plot(months, inc_data, marker='o', label='수입', color='#1a73e8', linewidth=2)
         ax.plot(months, exp_data, marker='o', label='지출', color='#d93025', linewidth=2)
         ax.fill_between(months, inc_data, alpha=0.1, color='#1a73e8')
         ax.fill_between(months, exp_data, alpha=0.1, color='#d93025')
-        ax.legend()
-        ax.set_title(f"{self.year}년 재정 흐름 (단위: 원)", pad=20, fontsize=12, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.3)
+        ax.legend(); ax.set_title(f"{self.year}년 재정 흐름 (단위: 원)", pad=20, fontsize=12, fontweight='bold'); ax.grid(True, linestyle='--', alpha=0.3)
         self.trend_canvas.draw()

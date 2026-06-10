@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, 
                              QTreeWidgetItem, QLineEdit, QPushButton, QLabel, 
-                             QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout)
-from PyQt6.QtCore import Qt
-from database import add_category, get_categories, delete_category, delete_category_by_parent
+                             QMessageBox, QHeaderView, QScrollArea, QFrame, QGridLayout, QMenu)
+from PyQt6.QtCore import Qt, QPoint
+from database import (add_category, get_categories, delete_category, 
+                      delete_category_by_parent, update_category_parent_name, update_category_sub_name)
 
 class CategorySection(QFrame):
     """A hierarchical tree section for category management."""
@@ -35,6 +36,12 @@ class CategorySection(QFrame):
         self.tree.setIndentation(20)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.tree.itemClicked.connect(self.handle_selection_changed)
+        
+        # Context Menu Policy
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree.itemChanged.connect(self.handle_item_edited)
+        
         layout.addWidget(self.tree)
 
         # Enable Delete Shortcut via Event Filter
@@ -63,6 +70,44 @@ class CategorySection(QFrame):
         input_layout.addWidget(self.add_btn)
         input_layout.addWidget(del_btn)
         layout.addLayout(input_layout)
+
+    def show_context_menu(self, position: QPoint):
+        item = self.tree.itemAt(position)
+        if not item: return
+        
+        menu = QMenu(self)
+        edit_action = menu.addAction("✏️ 이름 수정")
+        delete_action = menu.addAction("🗑️ 삭제")
+        
+        action = menu.exec(self.tree.viewport().mapToGlobal(position))
+        
+        if action == edit_action:
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.tree.editItem(item, 0)
+        elif action == delete_action:
+            self.handle_delete()
+
+    def handle_item_edited(self, item, column):
+        # Prevent recursion and only process user-initiated changes
+        if self.signalsBlocked(): return
+        
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        # Clean icons/indentation from the edited text
+        new_name = item.text(0).replace("📂 ", "").replace("└ ", "").strip()
+        
+        if not new_name:
+            self.load_data() 
+            return
+
+        if data["type"] == "parent":
+            if new_name != data["name"]:
+                update_category_parent_name(self.hid, self.db_type, data["name"], new_name)
+        else:
+            if new_name != data["name"]:
+                update_category_sub_name(data["id"], new_name)
+        
+        # Reload to refresh formatting and internal data
+        self.load_data()
 
     def eventFilter(self, source, event):
         if event.type() == event.Type.KeyPress and source is self.tree:

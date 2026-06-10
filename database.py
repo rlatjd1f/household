@@ -244,6 +244,26 @@ def delete_category_by_parent(hid, db_type, parent_name):
     conn.commit()
     conn.close()
 
+def update_category_parent_name(hid, db_type, old_name, new_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "UPDATE categories SET parent_category = ? WHERE household_id = ? AND type = ? AND parent_category = ?"
+    params = (new_name, hid, db_type, old_name)
+    log_query(query, params)
+    cursor.execute(query, params)
+    conn.commit()
+    conn.close()
+
+def update_category_sub_name(cat_id, new_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "UPDATE categories SET sub_category = ? WHERE id = ?"
+    params = (new_name, cat_id)
+    log_query(query, params)
+    cursor.execute(query, params)
+    conn.commit()
+    conn.close()
+
 # --- Asset Functions ---
 def add_asset(hid, name, initial_balance):
     conn = get_db_connection()
