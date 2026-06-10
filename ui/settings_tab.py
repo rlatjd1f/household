@@ -41,8 +41,10 @@ class CategorySection(QFrame):
         input_layout = QHBoxLayout()
         self.parent_input = QLineEdit()
         self.parent_input.setPlaceholderText("대분류 (예: 식비)")
+        self.parent_input.returnPressed.connect(self.handle_add) # Add on Enter
         self.sub_input = QLineEdit()
         self.sub_input.setPlaceholderText("중분류 (예: 외식)")
+        self.sub_input.returnPressed.connect(self.handle_add) # Add on Enter
         
         self.add_btn = QPushButton("추가")
         self.add_btn.setFixedWidth(80)

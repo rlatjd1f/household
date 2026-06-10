@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
                              QLabel, QPushButton)
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from database import init_db
 from ui.settings_tab import SettingsTab
 from ui.budget_tab import BudgetTab
@@ -36,7 +36,7 @@ QPushButton {
     font-weight: 600;
 }
 
-QTableWidget {
+QTableWidget, QTreeWidget {
     border-radius: 8px;
     outline: none;
 }
@@ -76,6 +76,8 @@ QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8ea
 QHeaderView::section:vertical { background-color: #ffffff; border-right: 2px solid #e8eaed; }
 QTableWidget QTableCornerButton::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; border-right: 2px solid #e8eaed; }
 
+QTableWidget, QTreeWidget { background-color: #ffffff; border: 1px solid #dadce0; gridline-color: #f1f3f4; selection-background-color: #e8f0fe; selection-color: #1a73e8; outline: none; border-radius: 8px; }
+
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #ffffff; border: 1px solid #dadce0; border-radius: 12px; }
 
@@ -92,9 +94,6 @@ QPushButton { background-color: #1a73e8; color: white; border: 1px solid #1a73e8
 QPushButton:hover { background-color: #1765cc; }
 QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
 QPushButton#DeleteBtn:hover { background-color: #e8eaed; }
-
-QTableWidget, QTreeWidget { background-color: #ffffff; border: 1px solid #dadce0; gridline-color: #f1f3f4; selection-background-color: #e8f0fe; selection-color: #1a73e8; outline: none; border-radius: 8px; }
-QHeaderView::section { background-color: #ffffff; border-bottom: 2px solid #e8eaed; color: #5f6368; }
 
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #1a73e8; }
@@ -115,8 +114,10 @@ QListWidget::item:hover:!selected { background-color: #35363a; }
 
 /* Table/Tree Headers */
 QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }
-QHeaderView::section:vertical { background-color: #2d2e30; border-right: 2px solid #3c4043; }
+QHeaderView::section:vertical { background-color: #2d2e30; border-right: 1px solid #3c4043; }
 QTableWidget QTableCornerButton::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; border-right: 2px solid #3c4043; }
+
+QTableWidget, QTreeWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; border-radius: 8px; }
 
 /* Cards in Settings/etc */
 QFrame[frameShape="5"] { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
@@ -134,9 +135,6 @@ QPushButton { background-color: #8ab4f8; color: #202124; border: 1px solid #8ab4
 QPushButton:hover { background-color: #aecbfa; }
 QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
 QPushButton#DeleteBtn:hover { background-color: #4d4d4d; }
-
-QTableWidget, QTreeWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; border-radius: 8px; }
-QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }
 
 QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #8ab4f8; }
@@ -197,11 +195,8 @@ class MainWindow(QMainWindow):
 
         self.sidebar.currentRowChanged.connect(self.handle_navigation)
         
-        # Default to current month
-        import datetime
-        current_month = datetime.datetime.now().month
-        # Row 4 is Jan, 5 is Feb...
-        self.sidebar.setCurrentRow(4 + (current_month - 1))
+        # Default page: Settings (Row 0)
+        self.sidebar.setCurrentRow(0)
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -223,7 +218,7 @@ class MainWindow(QMainWindow):
             self.content_stack.addWidget(self.month_pages[m])
 
     def setup_sidebar(self):
-        # Items directly
+        # 1. Base Menu Items
         self.sidebar.addItem(QListWidgetItem("⚙️  설정"))     # Row 0
         self.sidebar.addItem(QListWidgetItem("📊  예산 설정")) # Row 1
         self.sidebar.addItem(QListWidgetItem("💰  자산 설정")) # Row 2
@@ -233,9 +228,17 @@ class MainWindow(QMainWindow):
         spacer.setFlags(Qt.ItemFlag.NoItemFlags)
         self.sidebar.addItem(spacer) # Row 3
         
-        # Months 1-12
-        for i in range(1, 13):
-            self.sidebar.addItem(QListWidgetItem(f"      {i}월 내역")) # Row 4-15
+        # 2. Months 1-12 with Emojis and Season Colors (Subtle)
+        month_data = [
+            ("❄️", "1월 내역"), ("🌨️", "2월 내역"), ("🌱", "3월 내역"),
+            ("🌸", "4월 내역"), ("🌷", "5월 내역"), ("☀️", "6월 내역"),
+            ("🌊", "7월 내역"), ("🍦", "8월 내역"), ("🍂", "9월 내역"),
+            ("🍁", "10월 내역"), ("☁️", "11월 내역"), ("🎄", "12월 내역")
+        ]
+
+        for i, (emoji, text) in enumerate(month_data):
+            item = QListWidgetItem(f"      {emoji} {text}")
+            self.sidebar.addItem(item)
 
     def handle_navigation(self, row):
         target_index = -1
