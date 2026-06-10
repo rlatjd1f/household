@@ -16,13 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        include:
-          - os: windows-latest
-            artifact_name: HouseholdManager.exe
-            asset_name: HouseholdManager-Windows.exe
-          - os: macos-latest
-            artifact_name: dist/main.app
-            asset_name: HouseholdManager-macOS.zip
     
     steps:
       - name: Checkout code
@@ -40,12 +33,16 @@ jobs:
 
       - name: Build with PyInstaller (Windows)
         if: matrix.os == 'windows-latest'
-        run: pyinstaller --noconfirm --onefile --windowed --name HouseholdManager main.py
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name HouseholdManager --collect-all matplotlib main.py
 
       - name: Build with PyInstaller (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          pyinstaller --noconfirm --windowed --name HouseholdManager main.py
+          pyinstaller --noconfirm --windowed --name HouseholdManager \
+          --osx-bundle-identifier com.household.manager \
+          --collect-all matplotlib \
+          main.py
           cd dist
           zip -r ../HouseholdManager-macOS.zip HouseholdManager.app
 
