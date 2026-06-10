@@ -3,8 +3,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.ticker import FuncFormatter
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, 
                              QScrollArea, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QHeaderView, QTextBrowser, QApplication)
+                             QHeaderView, QTextBrowser, QApplication, QSizePolicy, QAbstractItemView)
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
 from database import (get_monthly_category_stats, get_monthly_daily_trends, 
                       get_yearly_monthly_trends, get_detailed_budgets, get_ledger_entries)
 import datetime
@@ -20,6 +21,13 @@ if platform.system() == 'Darwin':
     plt.rcParams['font.family'] = 'AppleGothic'
 elif platform.system() == 'Windows':
     plt.rcParams['font.family'] = 'Malgun Gothic'
+
+CHART_NUMBER_FONT_SIZE = 9
+CHART_TITLE_FONT_SIZE = 12
+CHART_LEGEND_FONT_SIZE = 9
+plt.rcParams['xtick.labelsize'] = CHART_NUMBER_FONT_SIZE
+plt.rcParams['ytick.labelsize'] = CHART_NUMBER_FONT_SIZE
+plt.rcParams['legend.fontsize'] = CHART_LEGEND_FONT_SIZE
 
 class ReportSection(QFrame):
     def __init__(self, title):
@@ -145,7 +153,7 @@ class MonthlyReportTab(QWidget):
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#dadce0')
         ax.spines['bottom'].set_color('#dadce0')
-        ax.tick_params(axis='both', colors='#5f6368', labelsize=9)
+        ax.tick_params(axis='both', colors='#5f6368', labelsize=CHART_NUMBER_FONT_SIZE)
         ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#e8eaed')
         ax.set_axisbelow(True)
         ax.set_facecolor('none')
@@ -192,7 +200,7 @@ class MonthlyReportTab(QWidget):
             plt.setp(ax.get_xticklabels(), rotation=0) 
             for bar in bars:
                 height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height, f'{int(height):,}', ha='center', va='bottom', fontsize=8, color='#1a73e8', fontweight='bold')
+                ax.text(bar.get_x() + bar.get_width()/2., height, f'{int(height):,}', ha='center', va='bottom', fontsize=CHART_NUMBER_FONT_SIZE, color='#1a73e8', fontweight='bold')
             ax.yaxis.grid(True, linestyle='--', alpha=0.3)
             ax.xaxis.grid(False)
         self.cat_canvas.draw()
@@ -218,9 +226,7 @@ class MonthlyReportTab(QWidget):
             amts = [r[1] for r in daily_trends]
             ax.plot(days, amts, color='#1a73e8', marker='o', markersize=4, linewidth=2)
             ax.fill_between(days, amts, alpha=0.1, color='#1a73e8')
-            avg_val = total_exp / 30
-            ax.axhline(avg_val, color='#d93025', linestyle='--', alpha=0.5, label='평균 지출')
-            ax.legend(); ax.set_xticks(range(1, 32, 5))
+            ax.set_xticks(range(1, 32, 5))
         self.daily_canvas.draw()
 
         self.generate_insights(total_exp, total_var, top_10, daily_trends)
@@ -251,29 +257,166 @@ class YearlyReportTab(QWidget):
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget(); content.setObjectName("ScrollContent"); self.layout = QVBoxLayout(content); self.layout.setSpacing(20)
+        content = QWidget(); content.setObjectName("ScrollContent"); self.layout = QVBoxLayout(content); self.layout.setSpacing(20); self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        kpi_layout = QHBoxLayout()
+        kpi_layout.setSpacing(15)
+        self.kpi_cards = {
+            "income": self.create_kpi_card("연간 수입", "#1a73e8"),
+            "expense": self.create_kpi_card("연간 지출", "#d93025"),
+            "net": self.create_kpi_card("순저축", "#188038"),
+            "avg_expense": self.create_kpi_card("평균 월지출", "#5f6368"),
+        }
+        for card in self.kpi_cards.values():
+            kpi_layout.addWidget(card["frame"])
+        self.layout.addLayout(kpi_layout)
+
         self.trend_section = ReportSection(f"📈 {self.year}년 수입/지출 추이")
+        self.trend_section.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.trend_canvas = FigureCanvas(plt.Figure(figsize=(10, 5), tight_layout=True))
+        self.trend_canvas.setMinimumHeight(460)
+        self.trend_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.trend_section.content_layout.addWidget(self.trend_canvas); self.layout.addWidget(self.trend_section)
+
+        detail_layout = QHBoxLayout()
+        detail_layout.setSpacing(15)
+
+        self.monthly_section = ReportSection("📋 월별 요약")
+        self.monthly_table = QTableWidget(0, 4)
+        self.monthly_table.setHorizontalHeaderLabels(["월", "수입", "지출", "차액"])
+        self.monthly_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.monthly_table.verticalHeader().setVisible(False)
+        self.monthly_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.monthly_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.monthly_section.content_layout.addWidget(self.monthly_table)
+
+        self.top_category_section = ReportSection("🏆 연간 지출 Top 5")
+        self.top_category_table = QTableWidget(0, 3)
+        self.top_category_table.setHorizontalHeaderLabels(["순위", "분류", "금액"])
+        self.top_category_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.top_category_table.verticalHeader().setVisible(False)
+        self.top_category_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.top_category_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.top_category_section.content_layout.addWidget(self.top_category_table)
+
+        self.insight_section = ReportSection("💡 연간 인사이트")
+        self.insight_text = QTextBrowser()
+        self.insight_text.setStyleSheet("background: transparent; border: none;")
+        self.insight_section.content_layout.addWidget(self.insight_text)
+
+        detail_layout.addWidget(self.monthly_section, 5)
+        detail_layout.addWidget(self.top_category_section, 3)
+        detail_layout.addWidget(self.insight_section, 4)
+        self.layout.addLayout(detail_layout)
+
+        self.layout.addStretch()
         scroll.setWidget(content); main_layout.addWidget(scroll)
+
+    def create_kpi_card(self, title, color):
+        frame = QFrame()
+        frame.setObjectName("ContentCard")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(18, 14, 18, 14)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 12px; color: #5f6368;")
+        value_label = QLabel("0원")
+        value_label.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {color};")
+        sub_label = QLabel("")
+        sub_label.setStyleSheet("font-size: 12px; color: #5f6368;")
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        layout.addWidget(sub_label)
+        return {"frame": frame, "value": value_label, "sub": sub_label}
+
+    def update_kpi_card(self, key, value, sub_text=""):
+        self.kpi_cards[key]["value"].setText(value)
+        self.kpi_cards[key]["sub"].setText(sub_text)
 
     def style_axes(self, ax, format_x=False, format_y=True):
         ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#dadce0'); ax.spines['bottom'].set_color('#dadce0')
-        ax.tick_params(axis='both', colors='#5f6368')
+        ax.tick_params(axis='both', colors='#5f6368', labelsize=CHART_NUMBER_FONT_SIZE)
         if format_y: ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
         if format_x: ax.xaxis.set_major_formatter(FuncFormatter(comma_formatter))
 
     def load_data(self):
         if self.hid is None: return
         trends = get_yearly_monthly_trends(self.hid, self.year)
+        months = sorted(trends.keys())
+        inc_data = [trends[m].get("수입", 0) for m in months]
+        exp_data = [trends[m].get("지출", 0) for m in months]
+        net_data = [inc - exp for inc, exp in zip(inc_data, exp_data)]
+        total_income = sum(inc_data)
+        total_expense = sum(exp_data)
+        total_net = total_income - total_expense
+        avg_expense = total_expense // 12
+        active_months = sum(1 for inc, exp in zip(inc_data, exp_data) if inc or exp)
+
+        self.update_kpi_card("income", f"{total_income:,}원", f"입력 월 {active_months}개월")
+        self.update_kpi_card("expense", f"{total_expense:,}원", f"월평균 {avg_expense:,}원")
+        self.update_kpi_card("net", f"{total_net:,}원", f"저축률 {(total_net / total_income * 100) if total_income else 0:.1f}%")
+        self.update_kpi_card("avg_expense", f"{avg_expense:,}원", "12개월 기준")
+
         self.trend_canvas.figure.clear()
         ax = self.trend_canvas.figure.add_subplot(111)
         self.style_axes(ax)
-        months = sorted(trends.keys()); inc_data = [trends[m]["수입"] for m in months]; exp_data = [trends[m]["지출"] for m in months]
+        ax.bar(months, net_data, label='순현금흐름', color=['#188038' if v >= 0 else '#d93025' for v in net_data], alpha=0.18)
         ax.plot(months, inc_data, marker='o', label='수입', color='#1a73e8', linewidth=2)
         ax.plot(months, exp_data, marker='o', label='지출', color='#d93025', linewidth=2)
         ax.fill_between(months, inc_data, alpha=0.1, color='#1a73e8')
         ax.fill_between(months, exp_data, alpha=0.1, color='#d93025')
-        ax.legend(); ax.set_title(f"{self.year}년 재정 흐름 (단위: 원)", pad=20, fontsize=12, fontweight='bold'); ax.grid(True, linestyle='--', alpha=0.3)
+        ax.legend(fontsize=CHART_LEGEND_FONT_SIZE); ax.set_title(f"{self.year}년 재정 흐름 (단위: 원)", pad=20, fontsize=CHART_TITLE_FONT_SIZE, fontweight='bold'); ax.grid(True, linestyle='--', alpha=0.3)
+        self.trend_canvas.figure.subplots_adjust(left=0.06, right=0.98, top=0.88, bottom=0.12)
         self.trend_canvas.draw()
+
+        self.monthly_table.setRowCount(0)
+        for month, income, expense, net in zip(months, inc_data, exp_data, net_data):
+            row = self.monthly_table.rowCount()
+            self.monthly_table.insertRow(row)
+            values = [f"{int(month)}월", f"{income:,}", f"{expense:,}", f"{net:,}"]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col > 0:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if col == 3:
+                    item.setForeground(QColor("#188038") if net >= 0 else QColor("#d93025"))
+                self.monthly_table.setItem(row, col, item)
+
+        category_totals = {}
+        for month in range(1, 13):
+            for entry in get_ledger_entries(self.hid, self.year, month):
+                if entry[2] != "지출":
+                    continue
+                category = entry[9] or "미분류"
+                category_totals[category] = category_totals.get(category, 0) + entry[5]
+
+        top_categories = sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:5]
+        self.top_category_table.setRowCount(0)
+        for rank, (category, amount) in enumerate(top_categories, start=1):
+            row = self.top_category_table.rowCount()
+            self.top_category_table.insertRow(row)
+            self.top_category_table.setItem(row, 0, QTableWidgetItem(str(rank)))
+            self.top_category_table.setItem(row, 1, QTableWidgetItem(category))
+            amount_item = QTableWidgetItem(f"{amount:,}")
+            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.top_category_table.setItem(row, 2, amount_item)
+
+        self.update_yearly_insights(months, inc_data, exp_data, net_data, top_categories)
+
+    def update_yearly_insights(self, months, inc_data, exp_data, net_data, top_categories):
+        text_color = "#e8eaed" if "background-color: #202124" in (QApplication.instance().styleSheet() or "") else "#3c4043"
+        expense_peak = max(zip(months, exp_data), key=lambda item: item[1])
+        income_peak = max(zip(months, inc_data), key=lambda item: item[1])
+        deficit_months = [f"{int(month)}월" for month, net in zip(months, net_data) if net < 0]
+        top_category_text = f"{top_categories[0][0]} {top_categories[0][1]:,}원" if top_categories else "데이터 없음"
+
+        html = f"""
+        <div style="line-height:165%; font-size:14px; color:{text_color};">
+            <p><b>가장 지출이 큰 달</b>: {int(expense_peak[0])}월 ({expense_peak[1]:,}원)</p>
+            <p><b>가장 수입이 큰 달</b>: {int(income_peak[0])}월 ({income_peak[1]:,}원)</p>
+            <p><b>최대 지출 분류</b>: {top_category_text}</p>
+            <p><b>적자 월</b>: {', '.join(deficit_months) if deficit_months else '없음'}</p>
+        </div>
+        """
+        self.insight_text.setHtml(html)
