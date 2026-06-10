@@ -1,4 +1,12 @@
 import sys
+import os
+
+# --- macOS Standalone App Crash Workaround ---
+if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+    os.environ['QT_MAC_WANTS_LAYER'] = '1'
+    # Ensure standard backend for matplotlib on macOS
+    os.environ['MPLBACKEND'] = 'Agg' 
+
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
                              QLabel, QPushButton, QInputDialog, QMessageBox, QFrame)
