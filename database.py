@@ -18,16 +18,14 @@ def init_db():
     )
     """)
 
-    # 2. Budgets Table
+    # 2. Monthly Budgets Table (Category-independent)
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS budgets (
+    CREATE TABLE IF NOT EXISTS monthly_budgets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         year INTEGER NOT NULL,
         month INTEGER NOT NULL,
-        category_id INTEGER NOT NULL,
         amount INTEGER DEFAULT 0,
-        FOREIGN KEY (category_id) REFERENCES categories (id),
-        UNIQUE(year, month, category_id)
+        UNIQUE(year, month)
     )
     """)
 
@@ -41,7 +39,7 @@ def init_db():
     )
     """)
 
-    # 4. Ledgers (Transaction History) Table
+    # 4. Ledgers Table (Updated for Payee and specific columns)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ledgers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,12 +49,24 @@ def init_db():
         asset_id INTEGER,
         amount INTEGER NOT NULL,
         memo TEXT,
-        payment_method TEXT,
+        payee TEXT, -- 사용처 / 소득처
+        payment_method TEXT, -- '신용카드', '은행' 등 (참고용)
         FOREIGN KEY (category_id) REFERENCES categories (id),
         FOREIGN KEY (asset_id) REFERENCES assets (id)
     )
     """)
 
+    conn.commit()
+
+    # --- Migration: Add missing columns if they don't exist ---
+    cursor.execute("PRAGMA table_info(ledgers)")
+    columns = [row[1] for row in cursor.fetchall()]
+    
+    if "payee" not in columns:
+        cursor.execute("ALTER TABLE ledgers ADD COLUMN payee TEXT")
+    if "payment_method" not in columns:
+        cursor.execute("ALTER TABLE ledgers ADD COLUMN payment_method TEXT")
+        
     conn.commit()
     conn.close()
     print(f"Database {DB_NAME} initialized successfully.")
@@ -96,6 +106,13 @@ def delete_category(category_id):
     conn.commit()
     conn.close()
 
+def delete_category_by_parent(db_type, parent_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM categories WHERE type = ? AND parent_category = ?", (db_type, parent_name))
+    conn.commit()
+    conn.close()
+
 # --- Asset Functions ---
 def add_asset(name, initial_balance):
     conn = get_db_connection()
@@ -126,14 +143,14 @@ def delete_asset(asset_id):
     conn.close()
 
 # --- Ledger Functions ---
-def add_ledger_entry(date, entry_type, category_id, asset_id, amount, memo, payment_method):
+def add_ledger_entry(date, entry_type, category_id, asset_id, amount, memo, payee, payment_method):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO ledgers (date, type, category_id, asset_id, amount, memo, payment_method)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (date, entry_type, category_id, asset_id, amount, memo, payment_method))
+            INSERT INTO ledgers (date, type, category_id, asset_id, amount, memo, payee, payment_method)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (date, entry_type, category_id, asset_id, amount, memo, payee, payment_method))
         
         # Update asset balance
         if entry_type == "수입":
@@ -149,7 +166,7 @@ def add_ledger_entry(date, entry_type, category_id, asset_id, amount, memo, paym
     finally:
         conn.close()
 
-def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amount, memo):
+def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amount, memo, payee, payment_method):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -158,7 +175,6 @@ def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amoun
         old = cursor.fetchone()
         if old:
             old_type, old_amount, old_asset_id = old
-            # Revert old balance
             if old_type == "수입":
                 cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (old_amount, old_asset_id))
             elif old_type == "지출":
@@ -166,8 +182,8 @@ def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amoun
 
         # Update ledger
         cursor.execute("""
-            UPDATE ledgers SET date=?, type=?, category_id=?, asset_id=?, amount=?, memo=? WHERE id=?
-        """, (date, entry_type, category_id, asset_id, amount, memo, entry_id))
+            UPDATE ledgers SET date=?, type=?, category_id=?, asset_id=?, amount=?, memo=?, payee=?, payment_method=? WHERE id=?
+        """, (date, entry_type, category_id, asset_id, amount, memo, payee, payment_method, entry_id))
 
         # Apply new balance
         if entry_type == "수입":
@@ -190,7 +206,8 @@ def get_ledger_entries(year, month):
     date_pattern = f"{year}-{month_str}-%"
     
     cursor.execute("""
-        SELECT l.id, l.date, l.type, l.category_id, l.asset_id, l.amount, l.memo, c.parent_category, c.sub_category, a.asset_name
+        SELECT l.id, l.date, l.type, l.category_id, l.asset_id, l.amount, l.memo, l.payee, l.payment_method,
+               c.parent_category, c.sub_category, a.asset_name
         FROM ledgers l
         LEFT JOIN categories c ON l.category_id = c.id
         LEFT JOIN assets a ON l.asset_id = a.id
@@ -217,28 +234,23 @@ def delete_ledger_entry(entry_id):
         conn.commit()
     conn.close()
 
-# --- Budget Functions ---
-def get_budgets(year):
+# --- Budget Functions (New Table) ---
+def get_monthly_budgets(year):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT b.id, b.month, b.category_id, b.amount, c.parent_category, c.sub_category
-        FROM budgets b
-        JOIN categories c ON b.category_id = c.id
-        WHERE b.year = ?
-    """, (year,))
+    cursor.execute("SELECT month, amount FROM monthly_budgets WHERE year = ?", (year,))
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return {month: amount for month, amount in rows}
 
-def save_budget(year, month, category_id, amount):
+def save_monthly_budget(year, month, amount):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO budgets (year, month, category_id, amount)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(year, month, category_id) DO UPDATE SET amount = excluded.amount
-    """, (year, month, category_id, amount))
+        INSERT INTO monthly_budgets (year, month, amount)
+        VALUES (?, ?, ?)
+        ON CONFLICT(year, month) DO UPDATE SET amount = excluded.amount
+    """, (year, month, amount))
     conn.commit()
     conn.close()
 
