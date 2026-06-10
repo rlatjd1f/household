@@ -26,15 +26,18 @@ def import_from_excel(file_path, parent_widget):
             current_type = "소비" # Default
             for row in sheet.iter_rows(min_row=1, values_only=True):
                 if not row[0]: continue
-                header = str(row[0])
+                header = str(row[0]).strip()
                 if "소비 분류" in header: current_type = "소비"
                 elif "소득 분류" in header: current_type = "소득"
-                elif "결제수단" in header: current_type = "결제수단"
-                elif "자본" in header or "부채" in header: current_type = "자본"
+                elif "결제분류" in header: current_type = "결제수단"
+                elif "자본" in header and "부채" in header: current_type = "자본"
                 
                 # If it's a category row (Parent in A, Subs in C onwards)
                 if row[2]: # Has subcategories in Col C
                     parent = row[0]
+                    # Don't import headers as categories
+                    if parent in ["연도 설정", "소비 분류", "결제분류", "소득 분류", "자본, 부채 분류"]:
+                        continue
                     for col_idx in range(2, len(row)):
                         sub = row[col_idx]
                         if sub:
