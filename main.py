@@ -57,6 +57,7 @@ QLineEdit, QSpinBox, QDateEdit, QComboBox {
 
 LIGHT_STYLE = COMMON_STYLE + """
 QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #f8f9fa; border: none; }
+#ScrollContent { background-color: #f8f9fa; }
 QWidget { color: #3c4043; }
 QListWidget { background-color: #ffffff; border-right: 1px solid #dadce0; }
 QListWidget::item { color: #5f6368; }
@@ -93,6 +94,7 @@ QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
 
 DARK_STYLE = COMMON_STYLE + """
 QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #202124; border: none; }
+#ScrollContent { background-color: #202124; }
 QWidget { color: #e8eaed; }
 QListWidget { background-color: #2d2e30; border-right: 1px solid #3c4043; }
 QListWidget::item { color: #9aa0a6; }
@@ -131,7 +133,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Household Manager")
-        self.resize(1400, 900)
+        self.resize(2000, 900) # Expanded width
         self.is_dark_mode = False
         
         init_db()

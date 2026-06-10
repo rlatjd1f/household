@@ -51,12 +51,14 @@ class CategorySection(QFrame):
         self.sub_input.setPlaceholderText("중분류")
         
         add_btn = QPushButton("추가")
-        add_btn.setFixedWidth(60)
+        add_btn.setFixedWidth(80) # Increased from 60
+        add_btn.setStyleSheet("padding-left: 10px; padding-right: 10px;")
         add_btn.clicked.connect(self.handle_add)
         
         del_btn = QPushButton("삭제")
         del_btn.setObjectName("DeleteBtn")
-        del_btn.setFixedWidth(60)
+        del_btn.setFixedWidth(80) # Increased from 60
+        del_btn.setStyleSheet("padding-left: 10px; padding-right: 10px;")
         del_btn.clicked.connect(self.handle_delete)
 
         input_layout.addWidget(self.parent_input)
@@ -116,6 +118,7 @@ class SettingsTab(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         
         content_widget = QWidget()
+        content_widget.setObjectName("ScrollContent")
         self.content_layout = QVBoxLayout(content_widget)
         self.content_layout.setSpacing(20)
 
