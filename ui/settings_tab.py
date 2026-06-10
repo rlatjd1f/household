@@ -132,19 +132,16 @@ class CategorySection(QFrame):
         data = item.data(0, Qt.ItemDataRole.UserRole)
         
         if data["type"] == "parent":
-            # Delete entire parent
+            # Delete entire parent (Keep alert for bulk deletion safety)
             confirm = QMessageBox.question(self, "확인", f"대분류 '{data['name']}'와(과) 소속된 모든 중분류를 삭제하시겠습니까?", 
                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if confirm == QMessageBox.StandardButton.Yes:
                 self.delete_parent_category(data["name"])
                 self.load_data()
         else:
-            # Delete specific sub
-            confirm = QMessageBox.question(self, "확인", f"중분류 '{data['name']}'을(를) 삭제하시겠습니까?", 
-                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if confirm == QMessageBox.StandardButton.Yes:
-                delete_category(data["id"])
-                self.load_data()
+            # Delete specific sub (Remove alert for faster workflow)
+            delete_category(data["id"])
+            self.load_data()
 
     def delete_parent_category(self, parent_name):
         delete_parent_category_db(self.db_type, parent_name)
