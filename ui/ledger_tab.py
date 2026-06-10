@@ -49,7 +49,6 @@ class LedgerSpreadsheet(QTableWidget):
         
         try:
             if self.entry_type == "지출":
-                # [소비날짜, 결제수단, 수단명, 대분류, 항목, 지출금액, 사용처, 코멘트]
                 date = self.get_val(row, 1)
                 pay_method = self.get_val(row, 2)
                 asset_name = self.get_val(row, 3)
@@ -59,7 +58,6 @@ class LedgerSpreadsheet(QTableWidget):
                 payee = self.get_val(row, 7)
                 memo = self.get_val(row, 8)
             else:
-                # [소득날짜, 대분류, 항목, 소득 금액, 소득처]
                 date = self.get_val(row, 1)
                 parent = self.get_val(row, 2)
                 sub = self.get_val(row, 3)
@@ -70,24 +68,26 @@ class LedgerSpreadsheet(QTableWidget):
                 memo = ""
 
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
-            asset_id = self.ledger_tab.resolve_asset_id(asset_name) if asset_name else None
+            asset_id = self.ledger_tab.resolve_asset_id(asset_name)
             
-            # CRITICAL: Auto-save logic
-            # If we have an ID, update it.
-            # If we don't have an ID, only create if we have Date, Category (Parent/Sub) and Amount > 0
+            # More lenient save condition: Save if we have an ID (update) 
+            # OR if we have at least partial data (Date + any one of Cat, Amount, or Payee)
+            has_data = cat_id or amount > 0 or payee or memo or asset_id
+            
             if entry_id:
+                print(f"DEBUG: Updating entry {entry_id}...")
                 update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
-            else:
-                if date and cat_id and amount > 0:
-                    new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
-                    if new_id:
-                        self.blockSignals(True)
-                        self.setItem(row, 0, QTableWidgetItem(str(new_id)))
-                        self.blockSignals(False)
+            elif date and has_data:
+                print(f"DEBUG: Creating new entry for row {row}...")
+                new_id = add_ledger_entry(date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                if new_id:
+                    self.blockSignals(True)
+                    self.setItem(row, 0, QTableWidgetItem(str(new_id)))
+                    self.blockSignals(False)
             
             self.ledger_tab.refresh_summary()
         except Exception as e:
-            print(f"Save error ({self.entry_type}): {e}")
+            print(f"DEBUG: Save error ({self.entry_type}) for row {row}: {e}")
 
     def get_val(self, row, col):
         widget = self.cellWidget(row, col)
