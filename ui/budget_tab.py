@@ -53,42 +53,58 @@ class BudgetTab(QWidget):
         top_layout.addWidget(save_btn)
         layout.addLayout(top_layout)
 
-        # Budget Table (Rows: Categories + Total, Cols: 항목 + 1-12월 + 일괄적용)
+        # Budget Table (Rows: Categories + Total, Cols: 항목 + 일괄적용 + 1-12월)
         self.table = QTableWidget(len(self.categories) + 1, 14)
-        headers = ["항목"] + [f"{i}월" for i in range(1, 13)] + ["일괄 적용"]
+        headers = ["항목", "일괄 적용"] + [f"{i}월" for i in range(1, 13)]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        for i in range(1, 13):
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # 항목
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # 일괄적용
+        for i in range(2, 14):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(13, QHeaderView.ResizeMode.ResizeToContents)
         
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setDefaultSectionSize(45)
         
         delegate = NumericDelegate(self)
-        for i in range(1, 13):
+        for i in range(2, 14):
             self.table.setItemDelegateForColumn(i, delegate)
         
         for i, cat in enumerate(self.categories):
-            # Category Name
+            # Category Name (Col 0)
             item = QTableWidgetItem(cat)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 0, item)
             
-            # Month Cells
-            for m in range(1, 13):
+            # Batch Apply Button (Col 1)
+            batch_btn = QPushButton("일괄 적용")
+            batch_btn.setObjectName("BatchBtn")
+            # Explicit styling for visibility
+            batch_btn.setStyleSheet("""
+                QPushButton#BatchBtn {
+                    background-color: #e8f0fe;
+                    color: #1a73e8;
+                    border: 1px solid #1a73e8;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+                QPushButton#BatchBtn:hover {
+                    background-color: #1a73e8;
+                    color: white;
+                }
+            """)
+            batch_btn.clicked.connect(lambda chk, r=i: self.handle_batch_apply(r))
+            self.table.setCellWidget(i, 1, batch_btn)
+            
+            # Month Cells (Col 2-13)
+            for m in range(2, 14):
                 cell = QTableWidgetItem("0")
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(i, m, cell)
-            
-            # Batch Apply Button
-            batch_btn = QPushButton("일괄 적용")
-            batch_btn.setStyleSheet("padding: 4px; font-size: 11px;")
-            batch_btn.clicked.connect(lambda chk, r=i: self.handle_batch_apply(r))
-            self.table.setCellWidget(i, 13, batch_btn)
 
         # Total Row
         total_row = len(self.categories)
@@ -96,15 +112,17 @@ class BudgetTab(QWidget):
         total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         total_item.setBackground(QColor("#f1f3f4") if not self.is_dark() else QColor("#3c4043"))
         self.table.setItem(total_row, 0, total_item)
-        for m in range(1, 13):
+        
+        # Empty cell for 1st column in total row
+        empty_item = QTableWidgetItem("")
+        empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.table.setItem(total_row, 1, empty_item)
+
+        for m in range(2, 14):
             t_cell = QTableWidgetItem("0")
             t_cell.setFlags(t_cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
             t_cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(total_row, m, t_cell)
-        # Empty cell for 13th column in total row
-        empty_item = QTableWidgetItem("")
-        empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        self.table.setItem(total_row, 13, empty_item)
 
         self.table.itemChanged.connect(self.handle_item_changed)
         layout.addWidget(self.table)
@@ -124,7 +142,7 @@ class BudgetTab(QWidget):
 
     def handle_item_changed(self, item):
         col = item.column()
-        if col == 0 or col == 13: return 
+        if col < 2: return 
         if item.row() == len(self.categories): return
         
         self.table.blockSignals(True)
@@ -157,11 +175,11 @@ class BudgetTab(QWidget):
         if ok:
             self.table.blockSignals(True)
             formatted_amt = self.format_num(amount)
-            for m in range(1, 13):
+            for m in range(2, 14):
                 self.table.item(row, m).setText(formatted_amt)
             self.table.blockSignals(False)
             # Update all totals
-            for m in range(1, 13):
+            for m in range(2, 14):
                 self.update_month_total(m)
 
     def load_data(self):
@@ -174,9 +192,9 @@ class BudgetTab(QWidget):
             cat_data = data.get(cat_clean, {})
             for month in range(1, 13):
                 amt = cat_data.get(month, 0)
-                self.table.item(row, month).setText(self.format_num(amt))
+                self.table.item(row, month+1).setText(self.format_num(amt))
         
-        for m in range(1, 13):
+        for m in range(2, 14):
             self.update_month_total(m)
         self.table.blockSignals(False)
 
@@ -186,7 +204,7 @@ class BudgetTab(QWidget):
             for row, cat in enumerate(self.categories):
                 cat_clean = cat.split(' ')[1]
                 for month in range(1, 13):
-                    item = self.table.item(row, month)
+                    item = self.table.item(row, month+1)
                     amt_str = item.text().replace(',', '').strip()
                     amt = int(amt_str) if amt_str else 0
                     save_detailed_budget(year, month, cat_clean, amt)
