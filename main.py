@@ -19,8 +19,10 @@ from ui.asset_tab import AssetTab
 from ui.ledger_tab import LedgerTab
 from ui.report_tab import MonthlyReportTab, YearlyReportTab
 
+UI_FONT_FAMILY = "'Malgun Gothic', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif" if sys.platform == "win32" else "'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif"
+
 COMMON_STYLE = """
-QWidget { font-family: 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif; font-size: 13px; }
+QWidget { font-family: __UI_FONT_FAMILY__; font-size: 13px; }
 QListWidget { border: none; outline: none; padding-top: 10px; }
 QListWidget::item { height: 44px; padding-left: 20px; border-radius: 0px 22px 22px 0px; margin-right: 12px; }
 QPushButton { border-radius: 6px; padding: 8px 20px; font-weight: 600; }
@@ -28,7 +30,7 @@ QTableWidget, QTreeWidget { border-radius: 8px; outline: none; }
 QHeaderView::section { padding: 12px; border: none; font-weight: 600; font-size: 12px; text-transform: uppercase; }
 QTableWidget QTableCornerButton::section, QTreeWidget QHeaderView::section { background-color: transparent; border: none; }
 QLineEdit, QSpinBox, QDateEdit, QComboBox { border-radius: 6px; padding: 8px 12px; }
-"""
+""".replace("__UI_FONT_FAMILY__", UI_FONT_FAMILY)
 
 LIGHT_STYLE = COMMON_STYLE + """
 QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #f8f9fa; border: none; }
@@ -85,6 +87,20 @@ QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
 QMessageBox { background-color: #ffffff; }
 QMessageBox QLabel { color: #3c4043; font-size: 14px; }
 QMessageBox QPushButton { min-width: 80px; }
+QInputDialog { background-color: #ffffff; }
+QInputDialog QLabel { color: #3c4043; font-size: 14px; }
+QInputDialog QSpinBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; border-radius: 6px; padding: 8px 12px; }
+QInputDialog QPushButton { min-width: 80px; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px 4px 2px; }
+QScrollBar::handle:vertical { background: #c6cbd1; border-radius: 4px; min-height: 32px; }
+QScrollBar::handle:vertical:hover { background: #9aa0a6; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: transparent; border: none; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px 4px 2px 4px; }
+QScrollBar::handle:horizontal { background: #c6cbd1; border-radius: 4px; min-width: 32px; }
+QScrollBar::handle:horizontal:hover { background: #9aa0a6; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 """
 
 DARK_STYLE = COMMON_STYLE + """
@@ -142,6 +158,20 @@ QTabBar::tab:selected { color: #8ab4f8; border-bottom: 2px solid #8ab4f8; }
 QMessageBox { background-color: #2d2e30; }
 QMessageBox QLabel { color: #e8eaed; font-size: 14px; }
 QMessageBox QPushButton { min-width: 80px; }
+QInputDialog { background-color: #2d2e30; }
+QInputDialog QLabel { color: #e8eaed; font-size: 14px; }
+QInputDialog QSpinBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; border-radius: 6px; padding: 8px 12px; }
+QInputDialog QPushButton { min-width: 80px; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px 4px 2px; }
+QScrollBar::handle:vertical { background: #5f6368; border-radius: 4px; min-height: 32px; }
+QScrollBar::handle:vertical:hover { background: #80868b; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: transparent; border: none; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px 4px 2px 4px; }
+QScrollBar::handle:horizontal { background: #5f6368; border-radius: 4px; min-width: 32px; }
+QScrollBar::handle:horizontal:hover { background: #80868b; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 """
 
 class HouseholdSelector(QWidget):
@@ -235,6 +265,9 @@ class AppWindow(QMainWindow):
         self.is_dark_mode = not self.is_dark_mode
         QApplication.instance().setStyleSheet(DARK_STYLE if self.is_dark_mode else LIGHT_STYLE)
         self.theme_btn.setText("☀️ 테마" if self.is_dark_mode else "🌙 테마")
+        current_widget = self.content_stack.currentWidget()
+        if hasattr(current_widget, 'load_data'): current_widget.load_data()
+        if hasattr(current_widget, 'refresh_data'): current_widget.refresh_data()
 
     def handle_excel_import(self):
         from PyQt6.QtWidgets import QFileDialog; from ui.migration_util import import_from_excel
@@ -289,7 +322,7 @@ class MainController:
         self.selector = HouseholdSelector(self.start_app); self.selector.show()
 
     def start_app(self, hid, hname):
-        self.selector.close(); self.app_window = AppWindow(hid, hname, self.show_selector); self.app_window.show()
+        self.selector.close(); self.app_window = AppWindow(hid, hname, self.show_selector); self.app_window.showMaximized()
 
 def main():
     init_db(); app = QApplication(sys.argv); app.setStyleSheet(LIGHT_STYLE); controller = MainController(); controller.show_selector(); sys.exit(app.exec())
