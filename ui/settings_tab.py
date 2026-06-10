@@ -37,6 +37,9 @@ class CategorySection(QFrame):
         self.tree.itemClicked.connect(self.handle_selection_changed)
         layout.addWidget(self.tree)
 
+        # Enable Delete Shortcut via Event Filter
+        self.tree.installEventFilter(self)
+
         # Inputs
         input_layout = QHBoxLayout()
         self.parent_input = QLineEdit()
@@ -60,6 +63,13 @@ class CategorySection(QFrame):
         input_layout.addWidget(self.add_btn)
         input_layout.addWidget(self.del_btn)
         layout.addLayout(input_layout)
+
+    def eventFilter(self, source, event):
+        if event.type() == event.Type.KeyPress and source is self.tree:
+            if event.key() == Qt.Key.Key_Delete:
+                self.handle_delete()
+                return True
+        return super().eventFilter(source, event)
 
     def load_data(self):
         self.tree.blockSignals(True)
@@ -156,52 +166,42 @@ def delete_parent_category_db(db_type, parent_name):
     conn.close()
 
 class SettingsTab(QWidget):
-    self.tree.itemClicked.connect(self.handle_selection_changed)
-    layout.addWidget(self.tree)
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
 
-    # Enable Delete Shortcut
-    self.tree.installEventFilter(self)
-
-    def eventFilter(self, source, event):
-    from PyQt6.QtGui import QKeyEvent
-    if event.type() == event.Type.KeyPress and source is self.tree:
-        if event.key() == Qt.Key.Key_Delete:
-            self.handle_delete()
-            return True
-    return super().eventFilter(source, event)
-    ...
     def init_ui(self):
-    main_layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        
+        # Scroll Area for all sections
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        
+        content_widget = QWidget()
+        content_widget.setObjectName("ScrollContent")
+        self.grid_layout = QGridLayout(content_widget)
+        self.grid_layout.setSpacing(15)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
 
-    # Scroll Area for all sections
-    scroll = QScrollArea()
-    scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Define categories and add in 1x4 horizontal layout
+        self.sections = [
+            CategorySection("💸 소비 항목 관리", "소비", self),
+            CategorySection("💰 소득 항목 관리", "소득", self),
+            CategorySection("💳 결제수단 관리", "결제수단", self),
+            CategorySection("🏦 자본/부채 관리", "자본", self)
+        ]
 
-    content_widget = QWidget()
-    content_widget.setObjectName("ScrollContent")
-    self.grid_layout = QGridLayout(content_widget)
-    self.grid_layout.setSpacing(15)
-    self.grid_layout.setContentsMargins(10, 10, 10, 10)
-
-    # Define categories and add in 1x4 horizontal layout
-    self.sections = [
-        CategorySection("💸 소비 항목 관리", "소비", self),
-        CategorySection("💰 소득 항목 관리", "소득", self),
-        CategorySection("💳 결제수단 관리", "결제수단", self),
-        CategorySection("🏦 자본/부채 관리", "자본", self)
-    ]
-
-    for i, section in enumerate(self.sections):
-        self.grid_layout.addWidget(section, 0, i)
-
-    # Ensure items stay at the top and stretch horizontally
-    self.grid_layout.setRowStretch(1, 1)
-    for i in range(4):
-        self.grid_layout.setColumnStretch(i, 1)
-
-    scroll.setWidget(content_widget)
-    main_layout.addWidget(scroll)
+        for i, section in enumerate(self.sections):
+            self.grid_layout.addWidget(section, 0, i)
+        
+        # Ensure items stay at the top and stretch horizontally
+        self.grid_layout.setRowStretch(1, 1)
+        for i in range(4):
+            self.grid_layout.setColumnStretch(i, 1)
+        
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll)
 
     def load_data(self):
         for section in self.sections:
