@@ -28,3 +28,6 @@ The `household` project is a desktop GUI household account book application. It 
 - `docs`: 문서 수정 (GEMINI.md, PLAN.md 등)
 - `style`: 코드 포맷팅, 세미콜론 누락 등 (로직 변경 없음)
 - `refactor`: 코드 리팩토링
+
+## 버전 관리 및 릴리즈 규칙
+- **태그 생성 제한**: 작업자(사용자)가 명시적으로 "태그를 만들어줘" 또는 "vX.X.X로 릴리즈해줘"라고 요청한 경우에만 Git 태그를 생성하고 푸시합니다. 인공지능이 임의로 버전을 판단하여 태그를 생성하지 않습니다.
