@@ -5,6 +5,16 @@ from PyQt6.QtCore import Qt, QTimer, QDate
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry, 
                       delete_ledger_entry, get_categories, get_assets)
 
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Custom TableWidgetItem that sorts numerically instead of alphabetically."""
+    def __lt__(self, other):
+        try:
+            v1 = float(self.text().replace(',', ''))
+            v2 = float(other.text().replace(',', ''))
+            return v1 < v2
+        except:
+            return super().__lt__(other)
+
 class DateDelegate(QStyledItemDelegate):
     """Delegate that uses QDateEdit with Up/Down adjustment for Date cells."""
     def createEditor(self, parent, option, index):
@@ -212,16 +222,13 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def refresh_data(self):
-        # Disable sorting and block signals to prevent index jumps during load
         self.income_table.setSortingEnabled(False)
         self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
         self.expense_table.blockSignals(True)
-        
         entries = get_ledger_entries(self.year, self.month)
         self.income_table.setRowCount(0)
         self.expense_table.setRowCount(0)
-        
         for e in entries:
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
@@ -235,10 +242,8 @@ class LedgerTab(QWidget):
                 amt_formatted = format(e[5], ',')
                 data = [str(e[0]), e[1], e[9], e[10], amt_formatted, e[7]]
                 for i, val in enumerate(data): self.set_table_item(self.income_table, row, i, val)
-
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
-        # Re-enable sorting after data is fully loaded
         self.income_table.setSortingEnabled(True)
         self.expense_table.setSortingEnabled(True)
         self.refresh_summary()
@@ -247,20 +252,49 @@ class LedgerTab(QWidget):
         if col == 0:
             table.setItem(row, col, QTableWidgetItem(val))
             return
+        
+        # Determine if it's a numeric column
+        amt_col = 6 if table.entry_type == "지출" else 4
+        
         combos = {"지출": {2: "결제수단", 3: "수단명", 4: "소비_대", 5: "소비_중"}, "수입": {2: "소득_대", 3: "소득_중"}}
         etype = table.entry_type
+        
         if col in combos[etype]:
+            # For Combo cells, we also set the text on the underlying item for sorting
+            item = QTableWidgetItem(val or "")
+            table.setItem(row, col, item)
+            
             combo = StyledComboBox(row=row, col=col, spreadsheet=table)
             combo.setEditable(True)
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
+            
             if etype == "지출":
-                if col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.refresh_child_combo(tbl, r, 3, "수단명", t))
-                elif col == 4: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.refresh_child_combo(tbl, r, 5, "소비_중", t))
-            elif etype == "수입" and col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.refresh_child_combo(tbl, r, 3, "소득_중", t))
+                if col == 2: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "수단명", t))
+                elif col == 4: combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
+                else: combo.currentTextChanged.connect(lambda t, r=row, c=col, tbl=table: self.handle_combo_change(tbl, r, c, None, None, t))
+            elif etype == "수입" and col == 2: 
+                combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "소득_중", t))
+            else:
+                combo.currentTextChanged.connect(lambda t, r=row, c=col, tbl=table: self.handle_combo_change(tbl, r, c, None, None, t))
+            
             table.setCellWidget(row, col, combo)
+        elif col == amt_col:
+            table.setItem(row, col, NumericTableWidgetItem(val or "0"))
         else:
             table.setItem(row, col, QTableWidgetItem(val or ""))
+
+    def handle_combo_change(self, table, row, col, child_col, ctype, text):
+        # Update the hidden item text for sorting
+        item = table.item(row, col)
+        if item: item.setText(text)
+        
+        # Handle cascading if necessary
+        if child_col is not None:
+            self.refresh_child_combo(table, row, child_col, ctype, text)
+        
+        # Save to DB
+        table.save_row_to_db(row)
 
     def refresh_child_combo(self, table, row, child_col, ctype, parent_val):
         child_combo = table.cellWidget(row, child_col)
@@ -274,6 +308,9 @@ class LedgerTab(QWidget):
             else: items = []
             child_combo.addItems(items)
             child_combo.setCurrentIndex(-1)
+            # Also update child item text
+            child_item = table.item(row, child_col)
+            if child_item: child_item.setText("")
             child_combo.blockSignals(False)
 
     def populate_combo(self, combo, ctype, table, row, col):
@@ -294,7 +331,7 @@ class LedgerTab(QWidget):
         combo.addItems(items)
 
     def add_row(self, table):
-        table.setSortingEnabled(False) # Prevent row jumping while adding
+        table.setSortingEnabled(False)
         table.blockSignals(True)
         row = table.rowCount()
         table.insertRow(row)
