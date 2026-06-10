@@ -34,6 +34,7 @@ class CategorySection(QFrame):
         self.tree.header().setStretchLastSection(True)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.tree.setFixedHeight(250)
+        self.tree.itemClicked.connect(self.handle_selection_changed)
         layout.addWidget(self.tree)
 
         # Inputs
@@ -43,29 +44,29 @@ class CategorySection(QFrame):
         self.sub_input = QLineEdit()
         self.sub_input.setPlaceholderText("중분류 (예: 외식)")
         
-        add_btn = QPushButton("추가")
-        add_btn.setFixedWidth(80)
-        add_btn.clicked.connect(self.handle_add)
+        self.add_btn = QPushButton("추가")
+        self.add_btn.setFixedWidth(80)
+        self.add_btn.clicked.connect(self.handle_add)
         
-        del_btn = QPushButton("삭제")
-        del_btn.setObjectName("DeleteBtn")
-        del_btn.setFixedWidth(80)
-        del_btn.clicked.connect(self.handle_delete)
+        self.del_btn = QPushButton("삭제")
+        self.del_btn.setObjectName("DeleteBtn")
+        self.del_btn.setFixedWidth(80)
+        self.del_btn.clicked.connect(self.handle_delete)
 
         input_layout.addWidget(self.parent_input)
         input_layout.addWidget(self.sub_input)
-        input_layout.addWidget(add_btn)
-        input_layout.addWidget(del_btn)
+        input_layout.addWidget(self.add_btn)
+        input_layout.addWidget(self.del_btn)
         layout.addLayout(input_layout)
 
     def load_data(self):
+        self.tree.blockSignals(True)
         categories = get_categories(self.db_type)
         self.tree.clear()
         
         # Group by parent
         grouped = {}
         for cat in categories:
-            # cat: (id, type, parent, sub)
             parent = cat[2]
             if parent not in grouped:
                 grouped[parent] = []
@@ -73,23 +74,40 @@ class CategorySection(QFrame):
 
         for parent_name, subs in sorted(grouped.items()):
             parent_item = QTreeWidgetItem(self.tree, [parent_name])
-            parent_item.setFlags(parent_item.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
+            parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "parent", "name": parent_name})
             
             for sub in sorted(subs, key=lambda x: x[3]):
                 sub_item = QTreeWidgetItem(parent_item, [sub[3]])
-                sub_item.setData(0, Qt.ItemDataRole.UserRole, sub[0]) # Store ID
+                sub_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "sub", "id": sub[0], "parent": parent_name, "name": sub[3]})
             
             parent_item.setExpanded(True)
+        
+        self.parent_input.clear()
+        self.sub_input.clear()
+        self.add_btn.setEnabled(True)
+        self.tree.blockSignals(False)
+
+    def handle_selection_changed(self, item, column):
+        if not item: return
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        if data["type"] == "parent":
+            self.parent_input.setText(data["name"])
+            self.sub_input.clear()
+            self.add_btn.setEnabled(True)
+        else:
+            self.parent_input.setText(data["parent"])
+            self.sub_input.setText(data["name"])
+            self.add_btn.setEnabled(False) # Disable Add when a sub-item is selected
 
     def handle_add(self):
         parent = self.parent_input.text().strip()
         sub = self.sub_input.text().strip()
         if not parent or not sub:
-            QMessageBox.warning(self, "경고", f"{self.title}의 대분류와 중분류를 모두 입력하세요.")
+            QMessageBox.warning(self, "경고", "대분류와 중분류를 모두 입력하세요.")
             return
 
         if add_category(self.db_type, parent, sub):
-            # Only clear sub_input to make adding multiple sub-categories easier
             self.sub_input.clear()
             self.load_data()
         else:
@@ -101,17 +119,38 @@ class CategorySection(QFrame):
             QMessageBox.warning(self, "경고", "삭제할 분류를 선택하세요.")
             return
 
-        cat_id = item.data(0, Qt.ItemDataRole.UserRole)
+        data = item.data(0, Qt.ItemDataRole.UserRole)
         
-        if cat_id is None:
-            QMessageBox.warning(self, "안내", "대분류 자체는 삭제할 수 없습니다. 소속된 모든 중분류를 삭제하면 자동으로 사라지거나, 기능상 중분류를 선택해 삭제해 주세요.")
-            return
+        if data["type"] == "parent":
+            # Delete entire parent
+            confirm = QMessageBox.question(self, "확인", f"대분류 '{data['name']}'와(과) 소속된 모든 중분류를 삭제하시겠습니까?", 
+                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if confirm == QMessageBox.StandardButton.Yes:
+                self.delete_parent_category(data["name"])
+                self.load_data()
+        else:
+            # Delete specific sub
+            confirm = QMessageBox.question(self, "확인", f"중분류 '{data['name']}'을(를) 삭제하시겠습니까?", 
+                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if confirm == QMessageBox.StandardButton.Yes:
+                delete_category(data["id"])
+                self.load_data()
 
-        confirm = QMessageBox.question(self, "확인", f"'{item.text(0)}' 분류를 삭제하시겠습니까?", 
-                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if confirm == QMessageBox.StandardButton.Yes:
-            delete_category(cat_id)
-            self.load_data()
+    def delete_parent_category(self, parent_name):
+        # We need to delete all entries that match this type and parent_name
+        # Since we don't have a specific 'delete by parent' function, we iterate or add one.
+        # Let's use a new function in database.py for efficiency.
+        from database import delete_category_by_parent
+        delete_parent_category_db(self.db_type, parent_name)
+
+def delete_parent_category_db(db_type, parent_name):
+    import sqlite3
+    from database import DB_NAME
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM categories WHERE type = ? AND parent_category = ?", (db_type, parent_name))
+    conn.commit()
+    conn.close()
 
 class SettingsTab(QWidget):
     def __init__(self):
