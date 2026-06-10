@@ -104,8 +104,40 @@ QPushButton:hover { background-color: #1765cc; }
 QPushButton#DeleteBtn { background-color: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
 QPushButton#DeleteBtn:hover { background-color: #e8eaed; }
 
-QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; }
-QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #1a73e8; }
+/* Input Fields (Universal) */
+QLineEdit, QSpinBox, QDateEdit, QComboBox {
+    background-color: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #202124;
+    selection-background-color: #1a73e8;
+    selection-color: #ffffff;
+}
+
+QComboBox {
+    padding-right: 25px; /* Space for arrow */
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 25px;
+    border-left: none;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #5f6368;
+    margin-right: 8px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus {
+    border: 2px solid #1a73e8;
+    padding: 5px 9px;
+}
 
 QTabWidget::pane { border: 1px solid #dadce0; background: white; }
 QTabBar::tab { color: #5f6368; }
@@ -159,8 +191,40 @@ QPushButton:hover { background-color: #aecbfa; }
 QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
 QPushButton#DeleteBtn:hover { background-color: #4d4d4d; }
 
-QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
-QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #8ab4f8; }
+/* Input Fields (Universal) */
+QLineEdit, QSpinBox, QDateEdit, QComboBox {
+    background-color: #3c4043;
+    border: 1px solid #5f6368;
+    color: #e8eaed;
+    border-radius: 6px;
+    padding: 6px 10px;
+    selection-background-color: #8ab4f8;
+    selection-color: #202124;
+}
+
+QComboBox {
+    padding-right: 25px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 25px;
+    border-left: none;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #9aa0a6;
+    margin-right: 8px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus {
+    border: 2px solid #8ab4f8;
+    padding: 5px 9px;
+}
 
 QTabWidget::pane { border: 1px solid #3c4043; background: #2d2e30; }
 QTabBar::tab { color: #9aa0a6; }

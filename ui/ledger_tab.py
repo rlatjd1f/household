@@ -16,31 +16,27 @@ class LedgerSpreadsheet(QTableWidget):
 
     def init_ui(self):
         headers = ["ID"] + self.col_names
+        self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.verticalHeader().setDefaultSectionSize(45) # Increased row height to fix clipping
+        self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
-        self.setSortingEnabled(True) # Enable Sorting
+        self.setSortingEnabled(True)
         self.itemChanged.connect(self.handle_item_changed)
 
     def handle_item_changed(self, item):
-        # We handle item edits here. For Comboboxes, we handle them separately.
-        row = item.row()
-        id_item = self.item(row, 0)
-        if not id_item: return
-        entry_id = int(id_item.text()) if id_item.text() else None
-        
-        # Don't trigger if we are just loading data or the change was programmatic
         if self.signalsBlocked(): return
-
+        row = item.row()
         self.save_row_to_db(row)
 
     def save_row_to_db(self, row):
         id_item = self.item(row, 0)
-        entry_id = int(id_item.text()) if id_item and id_item.text() else None
+        if not id_item: return
+        entry_id = int(id_item.text()) if id_item.text() else None
         
         try:
             if self.entry_type == "지출":
-                # [소비날짜, 결제수단, 수단명, 대분류, 항목, 지출금액, 사용처, 코멘트]
                 date = self.get_val(row, 1)
                 pay_method = self.get_val(row, 2)
                 asset_name = self.get_val(row, 3)
@@ -50,7 +46,6 @@ class LedgerSpreadsheet(QTableWidget):
                 payee = self.get_val(row, 7)
                 memo = self.get_val(row, 8)
             else:
-                # [소득날짜, 대분류, 항목, 소득 금액, 소득처]
                 date = self.get_val(row, 1)
                 parent = self.get_val(row, 2)
                 sub = self.get_val(row, 3)
@@ -78,7 +73,6 @@ class LedgerSpreadsheet(QTableWidget):
             print(f"Save error ({self.entry_type}): {e}")
 
     def get_val(self, row, col):
-        # Check if cell has a widget (ComboBox)
         widget = self.cellWidget(row, col)
         if isinstance(widget, QComboBox):
             return widget.currentText()
@@ -155,14 +149,12 @@ class LedgerTab(QWidget):
             if e[2] == "지출":
                 row = self.expense_table.rowCount()
                 self.expense_table.insertRow(row)
-                # id, date, pay_method, asset_name, parent, sub, amount, payee, memo
                 data = [str(e[0]), e[1], e[8], e[11], e[9], e[10], str(e[5]), e[7], e[6]]
                 for i, val in enumerate(data):
                     self.set_table_item(self.expense_table, row, i, val)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
-                # id, date, parent, sub, amount, payee
                 data = [str(e[0]), e[1], e[9], e[10], str(e[5]), e[7]]
                 for i, val in enumerate(data):
                     self.set_table_item(self.income_table, row, i, val)
@@ -172,14 +164,12 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def set_table_item(self, table, row, col, val):
-        # col 0 is ID (item), rest might be combos
         if col == 0:
             table.setItem(row, col, QTableWidgetItem(val))
             return
 
-        # Check if this column should be a combo
         combos = {
-            "지출": {2: "결제수단", 3: "자본", 4: "소비_대", 5: "소비_중"},
+            "지출": {2: "결제수단", 3: "수단명", 4: "소비_대", 5: "소비_중"},
             "수입": {2: "소득_대", 3: "소득_중"}
         }
         
@@ -189,17 +179,46 @@ class LedgerTab(QWidget):
             combo.setEditable(True)
             self.populate_combo(combo, combos[etype][col], table, row, col)
             combo.setCurrentText(val or "")
+            
+            # Intelligent Cascading Logic
+            if etype == "지출":
+                if col == 2: # 결제수단 -> 수단명
+                    combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 3, "수단명", t))
+                elif col == 4: # 소비_대 -> 소비_중
+                    combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 5, "소비_중", t))
+            elif etype == "수입" and col == 2: # 소득_대 -> 소득_중
+                combo.currentTextChanged.connect(lambda t: self.refresh_child_combo(table, row, 3, "소득_중", t))
+
             combo.currentTextChanged.connect(lambda: table.save_row_to_db(row))
             table.setCellWidget(row, col, combo)
         else:
             table.setItem(row, col, QTableWidgetItem(val or ""))
 
+    def refresh_child_combo(self, table, row, child_col, ctype, parent_val):
+        child_combo = table.cellWidget(row, child_col)
+        if isinstance(child_combo, QComboBox):
+            child_combo.blockSignals(True)
+            child_combo.clear()
+            
+            from database import get_categories, get_assets
+            if ctype == "수단명":
+                items = [c[3] for c in get_categories("결제수단") if c[2] == parent_val]
+            elif ctype == "소비_중":
+                items = [c[3] for c in get_categories("소비") if c[2] == parent_val]
+            elif ctype == "소득_중":
+                items = [c[3] for c in get_categories("소득") if c[2] == parent_val]
+            else: items = []
+            
+            child_combo.addItems(items)
+            child_combo.blockSignals(False)
+
     def populate_combo(self, combo, ctype, table, row, col):
         from database import get_categories, get_assets
         if ctype == "결제수단":
             items = sorted(list(set(c[2] for c in get_categories("결제수단"))))
-        elif ctype == "자본":
-            items = [a[1] for a in get_assets()]
+        elif ctype == "수단명":
+            parent = table.get_val(row, 2)
+            items = [c[3] for c in get_categories("결제수단") if c[2] == parent]
         elif ctype == "소비_대":
             items = sorted(list(set(c[2] for c in get_categories("소비"))))
         elif ctype == "소비_중":
@@ -218,11 +237,8 @@ class LedgerTab(QWidget):
         row = table.rowCount()
         table.insertRow(row)
         table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
-        
-        # Initialize other cells (programmatic items and combos)
         for col in range(2, table.columnCount()):
             self.set_table_item(table, row, col, "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else "")
-            
         table.scrollToBottom()
         table.blockSignals(False)
 
@@ -241,7 +257,6 @@ class LedgerTab(QWidget):
             for r in range(table.rowCount()):
                 total += table.get_int(r, col)
             return total
-        
         exp = sum_table(self.expense_table, 6)
         inc = sum_table(self.income_table, 4)
         self.summary_label.setText(f"수입: {inc:,} | 지출: {exp:,} | 잔액: {inc - exp:,}")
