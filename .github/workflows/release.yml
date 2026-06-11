@@ -15,8 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
-    
+        include:
+          - os: windows-latest
+            artifact_name: HouseholdManager-Windows
+            asset_name: HouseholdManager-Windows.exe
+          - os: macos-latest
+            artifact_name: HouseholdManager-macOS
+            asset_name: HouseholdManager-macOS.zip
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,22 +40,97 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller --noconfirm HouseholdManager.spec
 
-      - name: Prepare Windows Asset
+      - name: Prepare Windows asset
         if: matrix.os == 'windows-latest'
-        run: mv dist/HouseholdManager.exe ./HouseholdManager-Windows.exe
+        shell: pwsh
+        run: Move-Item dist/HouseholdManager.exe ${{ matrix.asset_name }}
 
-      - name: Prepare macOS Asset
+      - name: Prepare macOS asset
         if: matrix.os == 'macos-latest'
         run: |
           cd dist
-          zip -r ../HouseholdManager-macOS.zip HouseholdManager.app
+          zip -r ../${{ matrix.asset_name }} HouseholdManager.app
 
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            HouseholdManager-Windows.exe
-            HouseholdManager-macOS.zip
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_tag="${GITHUB_REF_NAME}"
+          previous_tag="$(git tag --sort=-creatordate | grep -vx "$current_tag" | head -n 1 || true)"
+
+          if [[ -n "$previous_tag" ]]; then
+            range="$previous_tag..$current_tag"
+          else
+            range="$current_tag"
+          fi
+
+          notes_dir="$(mktemp -d)"
+          git log --reverse --format='%s' "$range" | while IFS= read -r subject; do
+            case "$subject" in
+              feat:*|feat\(*\):*) echo "${subject#*: }" >> "$notes_dir/features" ;;
+              fix:*|fix\(*\):*|bug:*|bug\(*\):*) echo "${subject#*: }" >> "$notes_dir/bugs" ;;
+              style:*|style\(*\):*) echo "${subject#*: }" >> "$notes_dir/design" ;;
+              docs:*|docs\(*\):*) echo "${subject#*: }" >> "$notes_dir/docs" ;;
+              refactor:*|refactor\(*\):*) echo "${subject#*: }" >> "$notes_dir/refactor" ;;
+              *) echo "$subject" >> "$notes_dir/other" ;;
+            esac
+          done
+
+          append_section() {
+            local title="$1"
+            local file="$2"
+
+            if [[ -s "$file" ]]; then
+              {
+                echo "## $title"
+                sed 's/^/- /' "$file"
+                echo
+              } >> RELEASE_NOTES.md
+            fi
+          }
+
+          : > RELEASE_NOTES.md
+          append_section "🐛 버그 수정" "$notes_dir/bugs"
+          append_section "✨ 기능 추가" "$notes_dir/features"
+          append_section "🎨 디자인 수정" "$notes_dir/design"
+          append_section "📝 문서 수정" "$notes_dir/docs"
+          append_section "♻️ 리팩토링" "$notes_dir/refactor"
+          append_section "🔧 기타 변경" "$notes_dir/other"
+
+          if [[ ! -s RELEASE_NOTES.md ]]; then
+            echo "## 🔧 기타 변경" > RELEASE_NOTES.md
+            echo "- 릴리즈 변경사항을 확인해 주세요." >> RELEASE_NOTES.md
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

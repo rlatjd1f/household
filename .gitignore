@@ -1,0 +1,26 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+myenv/
+
+# Local runtime data
+household.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Build and packaging outputs
+build/
+dist/
+*.spec.bak
+
+# Local tooling and OS files
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
