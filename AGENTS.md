@@ -57,3 +57,19 @@
 - Do not create Git tags unless the user explicitly asks to create a tag.
 - Do not infer version numbers or create releases without a direct user request.
 - Do not push until the user asks for push or confirms prepared commits.
+- When pushing a tag, summarize the commit history since the previous tag and use that summary as the tag message.
+- When a release is created from a pushed tag, write release notes in Korean using grouped sections. Use categories such as `🐛 버그 수정`, `✨ 기능 추가`, `🎨 디자인 수정`, `📝 문서 수정`, `♻️ 리팩토링`, and `🔧 기타 변경`; omit empty categories.
+- Under each release note category, list concrete changes as nested bullet items.
+- Release note format:
+  - `## 🐛 버그 수정`
+    - `- 수정된 문제 요약`
+  - `## ✨ 기능 추가`
+    - `- 추가된 기능 요약`
+  - `## 🎨 디자인 수정`
+    - `- 변경된 화면/스타일 요약`
+  - `## 📝 문서 수정`
+    - `- 변경된 문서 요약`
+  - `## ♻️ 리팩토링`
+    - `- 개선된 코드 구조 요약`
+  - `## 🔧 기타 변경`
+    - `- 그 외 변경사항 요약`
