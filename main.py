@@ -246,9 +246,14 @@ class AppWindow(QMainWindow):
         btn_row = QHBoxLayout(); btn_row.setContentsMargins(10, 0, 10, 0)
         self.theme_btn = QPushButton("🌙 테마"); self.theme_btn.setFlat(True); self.theme_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
         self.theme_btn.clicked.connect(self.toggle_theme)
+        btn_row.addWidget(self.theme_btn); sidebar_layout.addLayout(btn_row)
+
+        excel_btn_row = QHBoxLayout(); excel_btn_row.setContentsMargins(10, 0, 10, 0)
         self.import_btn = QPushButton("📂 엑셀 임포트"); self.import_btn.setFlat(True); self.import_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
         self.import_btn.clicked.connect(self.handle_excel_import)
-        btn_row.addWidget(self.theme_btn); btn_row.addWidget(self.import_btn); sidebar_layout.addLayout(btn_row)
+        self.export_btn = QPushButton("📤 엑셀 내보내기"); self.export_btn.setFlat(True); self.export_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
+        self.export_btn.clicked.connect(self.handle_excel_export)
+        excel_btn_row.addWidget(self.import_btn); excel_btn_row.addWidget(self.export_btn); sidebar_layout.addLayout(excel_btn_row)
 
         back_btn_row = QHBoxLayout(); back_btn_row.setContentsMargins(10, 0, 10, 0)
         self.back_btn = QPushButton("⬅️ 가계부 선택 이동"); self.back_btn.setFlat(True); self.back_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px; margin-top: 5px;"); self.back_btn.clicked.connect(self.on_back)
@@ -277,6 +282,28 @@ class AppWindow(QMainWindow):
                 w = self.content_stack.widget(i)
                 if hasattr(w, 'load_data'): w.load_data()
                 if hasattr(w, 'refresh_data'): w.refresh_data()
+
+    def handle_excel_export(self):
+        from datetime import datetime
+        from PyQt6.QtWidgets import QFileDialog
+        from ui.migration_util import export_to_excel
+
+        year, ok = QInputDialog.getInt(
+            self, "엑셀 내보내기", "내보낼 연도를 입력하세요:",
+            datetime.now().year, 1900, 2100, 1
+        )
+        if not ok:
+            return
+
+        default_name = f"{self.hname}_{year}_가계부.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "엑셀 내보내기", default_name, "Excel Files (*.xlsx)"
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path += ".xlsx"
+        export_to_excel(self.hid, year, file_path, self)
 
     def setup_pages(self):
         self.pages = {
