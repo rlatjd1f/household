@@ -24,6 +24,7 @@ def init_db():
         type TEXT NOT NULL, 
         parent_category TEXT NOT NULL, 
         sub_category TEXT NOT NULL, 
+        color TEXT,
         UNIQUE(household_id, type, parent_category, sub_category),
         FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
     )
@@ -86,6 +87,7 @@ def init_db():
                 type TEXT NOT NULL, 
                 parent_category TEXT NOT NULL, 
                 sub_category TEXT NOT NULL, 
+                color TEXT,
                 UNIQUE(household_id, type, parent_category, sub_category),
                 FOREIGN KEY (household_id) REFERENCES households (id) ON DELETE CASCADE
             )""",
@@ -135,6 +137,11 @@ def init_db():
                 conn.commit()
 
     # Ledgers migration (Individual columns)
+    cursor.execute(f"PRAGMA table_info(categories)")
+    c_cols = [row[1] for row in cursor.fetchall()]
+    if "color" not in c_cols:
+        cursor.execute("ALTER TABLE categories ADD COLUMN color TEXT")
+
     cursor.execute(f"PRAGMA table_info(ledgers)")
     l_cols = [row[1] for row in cursor.fetchall()]
     if "household_id" not in l_cols:
@@ -198,7 +205,7 @@ def update_household_name(hid, new_name):
 def add_category(hid, category_type, parent, sub):
     conn = get_db_connection()
     cursor = conn.cursor()
-    query = "INSERT INTO categories (household_id, type, parent_category, sub_category) VALUES (?, ?, ?, ?)"
+    query = "INSERT INTO categories (household_id, type, parent_category, sub_category, color) VALUES (?, ?, ?, ?, NULL)"
     params = (hid, category_type, parent, sub)
     log_query(query, params)
     try:
@@ -214,10 +221,10 @@ def get_categories(hid, category_type=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     if category_type:
-        query = "SELECT id, type, parent_category, sub_category FROM categories WHERE household_id = ? AND type = ?"
+        query = "SELECT id, type, parent_category, sub_category, color FROM categories WHERE household_id = ? AND type = ?"
         params = (hid, category_type)
     else:
-        query = "SELECT id, type, parent_category, sub_category FROM categories WHERE household_id = ?"
+        query = "SELECT id, type, parent_category, sub_category, color FROM categories WHERE household_id = ?"
         params = (hid,)
     log_query(query, params)
     cursor.execute(query, params)
@@ -259,6 +266,16 @@ def update_category_sub_name(cat_id, new_name):
     cursor = conn.cursor()
     query = "UPDATE categories SET sub_category = ? WHERE id = ?"
     params = (new_name, cat_id)
+    log_query(query, params)
+    cursor.execute(query, params)
+    conn.commit()
+    conn.close()
+
+def update_category_color(cat_id, color):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "UPDATE categories SET color = ? WHERE id = ?"
+    params = (color, cat_id)
     log_query(query, params)
     cursor.execute(query, params)
     conn.commit()
@@ -352,7 +369,7 @@ def get_ledger_entries(hid, year, month):
     month_str = f"{month:02d}"
     query = """
         SELECT l.id, l.date, l.type, l.category_id, l.asset_id, l.amount, l.memo, l.payee, l.payment_method,
-               c.parent_category, c.sub_category, p.sub_category as asset_name
+               c.parent_category, c.sub_category, p.sub_category as asset_name, c.color
         FROM ledgers l
         LEFT JOIN categories c ON l.category_id = c.id
         LEFT JOIN categories p ON l.asset_id = p.id

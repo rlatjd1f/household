@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
                              QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit)
 from PyQt6.QtCore import Qt, QTimer, QDate
+from PyQt6.QtGui import QColor, QBrush
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry, 
                       delete_ledger_entry, get_categories, get_assets)
 
@@ -174,6 +175,7 @@ class LedgerTab(QWidget):
         self.hid = hid
         self.month = month
         self.year = 2026
+        self.category_color_map = {}
         self.init_ui()
         self.refresh_data()
 
@@ -248,6 +250,7 @@ class LedgerTab(QWidget):
 
     def refresh_data(self):
         if self.hid is None: return
+        self.refresh_category_colors()
         self.income_table.setSortingEnabled(False)
         self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
@@ -265,6 +268,7 @@ class LedgerTab(QWidget):
                 for i, val in enumerate(data):
                     self.set_table_item(self.expense_table, row, i, val)
                 self.add_save_button(self.expense_table, row, True)
+                self.apply_row_color(self.expense_table, row, e[12] if len(e) > 12 else None)
             else:
                 row = self.income_table.rowCount()
                 self.income_table.insertRow(row)
@@ -272,12 +276,67 @@ class LedgerTab(QWidget):
                 for i, val in enumerate(data):
                     self.set_table_item(self.income_table, row, i, val)
                 self.add_save_button(self.income_table, row, True)
+                self.apply_row_color(self.income_table, row, e[12] if len(e) > 12 else None)
                 
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
         self.income_table.setSortingEnabled(True)
         self.expense_table.setSortingEnabled(True)
         self.refresh_summary()
+
+    def refresh_category_colors(self):
+        self.category_color_map = {}
+        for db_type in ["소비", "소득"]:
+            for category in get_categories(self.hid, db_type):
+                if len(category) > 4 and category[4]:
+                    self.category_color_map[(category[1], category[2], category[3])] = category[4]
+
+    def get_text_color_for_background(self, color):
+        qcolor = QColor(color)
+        if not qcolor.isValid():
+            return None
+        luminance = (0.299 * qcolor.red() + 0.587 * qcolor.green() + 0.114 * qcolor.blue())
+        return QColor("#202124") if luminance > 150 else QColor("#ffffff")
+
+    def apply_row_color(self, table, row, color):
+        text_color = self.get_text_color_for_background(color) if color else None
+        bg_color = QColor(color) if color else None
+
+        for col in range(table.columnCount()):
+            item = table.item(row, col)
+            if item:
+                if bg_color and bg_color.isValid():
+                    item.setBackground(bg_color)
+                    if text_color:
+                        item.setForeground(text_color)
+                else:
+                    item.setBackground(QBrush())
+                    item.setForeground(QBrush())
+
+            widget = table.cellWidget(row, col)
+            if isinstance(widget, QComboBox):
+                if bg_color and bg_color.isValid():
+                    text = text_color.name() if text_color else "#202124"
+                    widget.setStyleSheet(f"QComboBox {{ background-color: {color}; color: {text}; }}")
+                else:
+                    widget.setStyleSheet("")
+            elif isinstance(widget, QPushButton) and widget.objectName() == "SaveBtn":
+                if bg_color and bg_color.isValid():
+                    text = text_color.name() if text_color else "#202124"
+                    widget.setStyleSheet(f"background-color: {color}; color: {text};")
+                else:
+                    widget.setStyleSheet("")
+
+    def apply_row_color_from_values(self, table, row):
+        if table.entry_type == "지출":
+            db_type = "소비"
+            parent = table.get_val(row, 4)
+            sub = table.get_val(row, 5)
+        else:
+            db_type = "소득"
+            parent = table.get_val(row, 2)
+            sub = table.get_val(row, 3)
+        self.apply_row_color(table, row, self.category_color_map.get((db_type, parent, sub)))
 
     def set_table_item(self, table, row, col, val):
         if col == 0:
@@ -302,11 +361,11 @@ class LedgerTab(QWidget):
                 elif col == 4:
                     combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 5, "소비_중", t))
                 else:
-                    combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
+                    combo.currentTextChanged.connect(lambda t, tbl=table, cmb=combo, c=col: self.handle_combo_value_change(tbl, cmb, c, t))
             elif et == "수입" and col == 2:
                 combo.currentTextChanged.connect(lambda t, r=row, tbl=table: self.handle_combo_change(tbl, r, col, 3, "소득_중", t))
             else:
-                combo.currentTextChanged.connect(lambda t: table.set_save_status(table.indexAt(combo.pos()).row(), False))
+                combo.currentTextChanged.connect(lambda t, tbl=table, cmb=combo, c=col: self.handle_combo_value_change(tbl, cmb, c, t))
             
             table.setCellWidget(row, col, combo)
         elif col == amt_col:
@@ -320,6 +379,16 @@ class LedgerTab(QWidget):
         btn.clicked.connect(lambda: table.save_row_to_db(table.indexAt(table.sender().pos()).row()))
         table.setCellWidget(row, table.columnCount() - 1, btn)
 
+    def handle_combo_value_change(self, table, combo, col, text):
+        row = table.indexAt(combo.pos()).row()
+        if row < 0:
+            return
+        item = table.item(row, col)
+        if item:
+            item.setText(text)
+        table.set_save_status(row, False)
+        self.apply_row_color_from_values(table, row)
+
     def handle_combo_change(self, table, row, col, child_col, ctype, text):
         sender = self.sender()
         if not sender: return
@@ -329,6 +398,7 @@ class LedgerTab(QWidget):
         table.set_save_status(visual_row, False)
         if child_col is not None:
             self.refresh_child_combo(table, visual_row, child_col, ctype, text)
+        self.apply_row_color_from_values(table, visual_row)
 
     def refresh_child_combo(self, table, row, child_col, ctype, parent_val):
         child_combo = table.cellWidget(row, child_col)
