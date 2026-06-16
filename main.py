@@ -91,6 +91,11 @@ QInputDialog { background-color: #ffffff; }
 QInputDialog QLabel { color: #3c4043; font-size: 14px; }
 QInputDialog QSpinBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; border-radius: 6px; padding: 8px 12px; }
 QInputDialog QPushButton { min-width: 80px; }
+QColorDialog { background-color: #ffffff; color: #3c4043; }
+QColorDialog QLabel { color: #3c4043; }
+QColorDialog QFrame { background-color: #ffffff; }
+QColorDialog QLineEdit, QColorDialog QSpinBox { background-color: #ffffff; border: 1px solid #dadce0; color: #202124; border-radius: 6px; padding: 6px 10px; }
+QColorDialog QPushButton { min-width: 80px; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px 4px 2px; }
 QScrollBar::handle:vertical { background: #c6cbd1; border-radius: 4px; min-height: 32px; }
 QScrollBar::handle:vertical:hover { background: #9aa0a6; }
@@ -162,6 +167,11 @@ QInputDialog { background-color: #2d2e30; }
 QInputDialog QLabel { color: #e8eaed; font-size: 14px; }
 QInputDialog QSpinBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; border-radius: 6px; padding: 8px 12px; }
 QInputDialog QPushButton { min-width: 80px; }
+QColorDialog { background-color: #2d2e30; color: #e8eaed; }
+QColorDialog QLabel { color: #e8eaed; }
+QColorDialog QFrame { background-color: #2d2e30; }
+QColorDialog QLineEdit, QColorDialog QSpinBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; border-radius: 6px; padding: 6px 10px; }
+QColorDialog QPushButton { min-width: 80px; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px 4px 2px; }
 QScrollBar::handle:vertical { background: #5f6368; border-radius: 4px; min-height: 32px; }
 QScrollBar::handle:vertical:hover { background: #80868b; }
