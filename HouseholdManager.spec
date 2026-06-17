@@ -4,6 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 
 # Matplotlib 의존성 자동 수집
 datas, binaries, hiddenimports = collect_all('matplotlib')
+datas += [('assets', 'assets')]
 
 block_cipher = None
 
@@ -56,7 +57,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='HouseholdManager.app',
-        icon=None,
+        icon='assets/icon/app.icns',
         bundle_identifier='com.household.manager',
         info_plist={
             'NSPrincipalClass': 'NSApplication',
@@ -88,4 +89,5 @@ else:
         target_arch=None,
         codesign_identity=None,
         entitlements_file=None,
+        icon='assets/icon/app.ico',
     )

@@ -11,13 +11,19 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
                              QLabel, QPushButton, QInputDialog, QMessageBox, QFrame)
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QIcon
 from database import init_db, get_households, add_household, delete_household, update_household_name
 from ui.settings_tab import SettingsTab
 from ui.budget_tab import BudgetTab
 from ui.asset_tab import AssetTab
 from ui.ledger_tab import LedgerTab
 from ui.report_tab import MonthlyReportTab, YearlyReportTab
+
+def resource_path(relative_path):
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
+
+APP_ICON_PATH = resource_path(os.path.join("assets", "icon", "app.ico"))
 
 UI_FONT_FAMILY = "'Malgun Gothic', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif" if sys.platform == "win32" else "'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif"
 
@@ -189,6 +195,7 @@ class HouseholdSelector(QWidget):
         super().__init__()
         self.on_selected = on_selected
         self.setWindowTitle("가계부 선택")
+        self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.resize(700, 600)
         self.init_ui()
 
@@ -249,6 +256,7 @@ class AppWindow(QMainWindow):
         super().__init__()
         self.hid = hid; self.hname = hname; self.on_back = on_back
         self.setWindowTitle(f"Household Manager - {hname}"); self.resize(2000, 900); self.is_dark_mode = False
+        self.setWindowIcon(QIcon(APP_ICON_PATH))
         main_layout = QHBoxLayout(); main_layout.setContentsMargins(0, 0, 0, 0); main_layout.setSpacing(0)
         central_widget = QWidget(); central_widget.setLayout(main_layout); self.setCentralWidget(central_widget)
 
@@ -362,7 +370,7 @@ class MainController:
         self.selector.close(); self.app_window = AppWindow(hid, hname, self.show_selector); self.app_window.showMaximized()
 
 def main():
-    init_db(); app = QApplication(sys.argv); app.setStyleSheet(LIGHT_STYLE); controller = MainController(); controller.show_selector(); sys.exit(app.exec())
+    init_db(); app = QApplication(sys.argv); app.setWindowIcon(QIcon(APP_ICON_PATH)); app.setStyleSheet(LIGHT_STYLE); controller = MainController(); controller.show_selector(); sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
