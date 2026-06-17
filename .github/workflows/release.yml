@@ -37,6 +37,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set release version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          version = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          Path("version.py").write_text(f'APP_VERSION = "{version}"\n', encoding="utf-8")
+          PY
+
       - name: Build with PyInstaller
         run: pyinstaller --noconfirm HouseholdManager.spec
 

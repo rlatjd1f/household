@@ -10,7 +10,7 @@ if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
                              QLabel, QPushButton, QInputDialog, QMessageBox, QFrame)
-from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtCore import QSize, Qt, QTimer, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon
 from database import init_db, get_households, add_household, delete_household, update_household_name
 from ui.settings_tab import SettingsTab
@@ -18,6 +18,8 @@ from ui.budget_tab import BudgetTab
 from ui.asset_tab import AssetTab
 from ui.ledger_tab import LedgerTab
 from ui.report_tab import MonthlyReportTab, YearlyReportTab
+from updater import check_for_update, install_update
+from version import APP_VERSION
 
 def resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
@@ -190,6 +192,34 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; b
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 """
 
+
+class UpdateCheckWorker(QObject):
+    finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            self.finished.emit(check_for_update(APP_VERSION))
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
+class UpdateInstallWorker(QObject):
+    finished = pyqtSignal()
+    failed = pyqtSignal(str)
+
+    def __init__(self, update_info):
+        super().__init__()
+        self.update_info = update_info
+
+    def run(self):
+        try:
+            install_update(self.update_info)
+            self.finished.emit()
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
 class HouseholdSelector(QWidget):
     def __init__(self, on_selected):
         super().__init__()
@@ -211,12 +241,13 @@ class HouseholdSelector(QWidget):
         self.list_widget.itemDoubleClicked.connect(self.handle_select)
         layout.addWidget(self.list_widget)
         btn_layout = QHBoxLayout()
-        create_btn = QPushButton("+ 새 가계부 만들기"); create_btn.clicked.connect(self.handle_create)
-        rename_btn = QPushButton("🏷️ 이름 변경"); rename_btn.clicked.connect(self.handle_rename)
-        delete_btn = QPushButton("🗑️ 삭제"); delete_btn.setObjectName("DeleteBtn"); delete_btn.clicked.connect(self.handle_delete)
-        btn_layout.addWidget(create_btn); btn_layout.addWidget(rename_btn); btn_layout.addWidget(delete_btn); layout.addLayout(btn_layout)
-        select_btn = QPushButton("선택 완료 (더블클릭 가능)"); select_btn.setFixedHeight(50); select_btn.setStyleSheet("font-size: 16px; font-weight: bold;"); select_btn.clicked.connect(self.handle_select); layout.addWidget(select_btn)
+        self.create_btn = QPushButton("+ 새 가계부 만들기"); self.create_btn.clicked.connect(self.handle_create)
+        self.rename_btn = QPushButton("🏷️ 이름 변경"); self.rename_btn.clicked.connect(self.handle_rename)
+        self.delete_btn = QPushButton("🗑️ 삭제"); self.delete_btn.setObjectName("DeleteBtn"); self.delete_btn.clicked.connect(self.handle_delete)
+        btn_layout.addWidget(self.create_btn); btn_layout.addWidget(self.rename_btn); btn_layout.addWidget(self.delete_btn); layout.addLayout(btn_layout)
+        self.select_btn = QPushButton("선택 완료 (더블클릭 가능)"); self.select_btn.setFixedHeight(50); self.select_btn.setStyleSheet("font-size: 16px; font-weight: bold;"); self.select_btn.clicked.connect(self.handle_select); layout.addWidget(self.select_btn)
         self.refresh_list()
+
 
     def refresh_list(self):
         self.list_widget.clear()
@@ -257,6 +288,8 @@ class AppWindow(QMainWindow):
         self.hid = hid; self.hname = hname; self.on_back = on_back
         self.setWindowTitle(f"Household Manager - {hname}"); self.resize(2000, 900); self.is_dark_mode = False
         self.setWindowIcon(QIcon(APP_ICON_PATH))
+        self.is_loading = True
+        self.spinner_index = 0
         main_layout = QHBoxLayout(); main_layout.setContentsMargins(0, 0, 0, 0); main_layout.setSpacing(0)
         central_widget = QWidget(); central_widget.setLayout(main_layout); self.setCentralWidget(central_widget)
 
@@ -281,8 +314,119 @@ class AppWindow(QMainWindow):
 
         content_container = QVBoxLayout(); content_container.setContentsMargins(30, 20, 30, 20); self.content_stack = QStackedWidget(); content_container.addWidget(self.content_stack); main_layout.addLayout(content_container)
 
-        self.setup_pages(); self.setup_sidebar()
-        self.sidebar.currentRowChanged.connect(self.handle_navigation); self.sidebar.setCurrentRow(0)
+        self.create_loading_page()
+        self.set_loading_controls_enabled(False)
+        QTimer.singleShot(0, self.start_page_loading)
+
+    def create_loading_page(self):
+        self.loading_page = QFrame()
+        self.loading_page.setObjectName("MainLoadingPage")
+        self.loading_page.setStyleSheet("""
+            QFrame#MainLoadingPage {
+                background-color: #f8f9fa;
+                border: 1px solid #dadce0;
+                border-radius: 12px;
+            }
+            QLabel#MainLoadingSpinner {
+                color: #1a73e8;
+                font-size: 38px;
+                font-weight: 700;
+                background: transparent;
+            }
+            QLabel#MainLoadingTitle {
+                color: #202124;
+                font-size: 18px;
+                font-weight: 700;
+                background: transparent;
+            }
+            QLabel#MainLoadingMessage {
+                color: #5f6368;
+                font-size: 13px;
+                font-weight: 600;
+                background: transparent;
+            }
+        """)
+        loading_layout = QVBoxLayout(self.loading_page)
+        loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.setSpacing(12)
+        self.loading_spinner = QLabel("⠋")
+        self.loading_spinner.setObjectName("MainLoadingSpinner")
+        self.loading_spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_title = QLabel("가계부를 불러오는 중입니다")
+        loading_title.setObjectName("MainLoadingTitle")
+        loading_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_message = QLabel("데이터를 준비하고 있습니다...")
+        self.loading_message.setObjectName("MainLoadingMessage")
+        self.loading_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.addWidget(self.loading_spinner)
+        loading_layout.addWidget(loading_title)
+        loading_layout.addWidget(self.loading_message)
+        self.content_stack.addWidget(self.loading_page)
+        self.loading_timer = QTimer(self)
+        self.loading_timer.timeout.connect(self.update_loading_spinner)
+        self.loading_timer.start(90)
+
+    def update_loading_spinner(self):
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.spinner_index = (self.spinner_index + 1) % len(frames)
+        self.loading_spinner.setText(frames[self.spinner_index])
+
+    def set_loading_controls_enabled(self, enabled):
+        self.sidebar.setEnabled(enabled)
+        self.theme_btn.setEnabled(enabled)
+        self.import_btn.setEnabled(enabled)
+        self.export_btn.setEnabled(enabled)
+        self.back_btn.setEnabled(enabled)
+
+    def start_page_loading(self):
+        self.pages = {}
+        self.month_pages = {}
+        self.loading_steps = [
+            ("설정 정보를 불러오는 중입니다...", lambda: self.add_named_page("settings", SettingsTab(hid=self.hid))),
+            ("예산 정보를 불러오는 중입니다...", lambda: self.add_named_page("budget", BudgetTab(hid=self.hid))),
+            ("자산 정보를 불러오는 중입니다...", lambda: self.add_named_page("asset", AssetTab(hid=self.hid))),
+            ("월별 리포트를 불러오는 중입니다...", lambda: self.add_named_page("report_monthly", MonthlyReportTab(hid=self.hid))),
+            ("연도별 리포트를 불러오는 중입니다...", lambda: self.add_named_page("report_yearly", YearlyReportTab(hid=self.hid))),
+        ]
+        for month in range(1, 13):
+            self.loading_steps.append(
+                (f"{month}월 가계부를 불러오는 중입니다...", lambda m=month: self.add_month_page(m))
+            )
+        self.loading_step_index = 0
+        self.load_next_page_step()
+
+    def add_named_page(self, key, widget):
+        self.pages[key] = widget
+        self.content_stack.addWidget(widget)
+
+    def add_month_page(self, month):
+        widget = LedgerTab(hid=self.hid, month=month)
+        self.month_pages[month] = widget
+        self.content_stack.addWidget(widget)
+
+    def load_next_page_step(self):
+        if self.loading_step_index >= len(self.loading_steps):
+            self.finish_page_loading()
+            return
+        message, _ = self.loading_steps[self.loading_step_index]
+        self.loading_message.setText(message)
+        QTimer.singleShot(10, self.run_current_page_step)
+
+    def run_current_page_step(self):
+        _, loader = self.loading_steps[self.loading_step_index]
+        loader()
+        self.loading_step_index += 1
+        QTimer.singleShot(10, self.load_next_page_step)
+
+    def finish_page_loading(self):
+        self.loading_timer.stop()
+        self.content_stack.removeWidget(self.loading_page)
+        self.loading_page.deleteLater()
+        self.is_loading = False
+        self.setup_sidebar()
+        self.sidebar.currentRowChanged.connect(self.handle_navigation)
+        self.set_loading_controls_enabled(True)
+        self.sidebar.setCurrentRow(0)
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -340,6 +484,7 @@ class AppWindow(QMainWindow):
         for m in range(1, 13): self.content_stack.addWidget(self.month_pages[m]) # 5-16
 
     def setup_sidebar(self):
+        self.sidebar.clear()
         self.sidebar.addItem(QListWidgetItem("⚙️  설정"))           # 0
         self.sidebar.addItem(QListWidgetItem("📊  예산 설정"))       # 1
         self.sidebar.addItem(QListWidgetItem("💰  자산 설정"))       # 2
@@ -349,6 +494,8 @@ class AppWindow(QMainWindow):
         for i in range(1, 13): self.sidebar.addItem(QListWidgetItem(f"      {i}월")) # 6-17
 
     def handle_navigation(self, row):
+        if self.is_loading:
+            return
         idx = -1
         if 0 <= row <= 4: idx = row
         elif 6 <= row <= 17: idx = 5 + (row - 6)
@@ -361,13 +508,100 @@ class AppWindow(QMainWindow):
 class MainController:
     def __init__(self):
         self.selector = None; self.app_window = None
+        self.update_thread = None
+        self.update_worker = None
+        self.update_dialog = None
 
     def show_selector(self):
         if self.app_window: self.app_window.close()
         self.selector = HouseholdSelector(self.start_app); self.selector.show()
+        QTimer.singleShot(1200, self.check_for_updates)
 
     def start_app(self, hid, hname):
         self.selector.close(); self.app_window = AppWindow(hid, hname, self.show_selector); self.app_window.showMaximized()
+
+    def active_window(self):
+        return self.app_window or self.selector
+
+    def check_for_updates(self):
+        if not getattr(sys, "frozen", False) or self.update_thread:
+            return
+        self.update_thread = QThread()
+        self.update_worker = UpdateCheckWorker()
+        self.update_worker.moveToThread(self.update_thread)
+        self.update_thread.started.connect(self.update_worker.run)
+        self.update_worker.finished.connect(self.handle_update_check_finished)
+        self.update_worker.failed.connect(self.handle_update_check_failed)
+        self.update_worker.finished.connect(self.update_thread.quit)
+        self.update_worker.failed.connect(self.update_thread.quit)
+        self.update_worker.finished.connect(self.update_worker.deleteLater)
+        self.update_worker.failed.connect(self.update_worker.deleteLater)
+        self.update_thread.finished.connect(self.update_thread.deleteLater)
+        self.update_thread.finished.connect(self.clear_update_thread)
+        self.update_thread.start()
+
+    def handle_update_check_finished(self, update_info):
+        if not update_info:
+            return
+        QTimer.singleShot(0, lambda: self.prompt_update_available(update_info))
+
+    def prompt_update_available(self, update_info):
+        reply = QMessageBox.question(
+            self.active_window(),
+            "업데이트 확인",
+            f"새 버전 {update_info.tag_name}이 있습니다.\n"
+            f"현재 버전: v{APP_VERSION}\n\n"
+            "지금 자동 업데이트할까요?\n"
+            "업데이트가 완료되면 프로그램이 자동으로 재시작됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.start_update_install(update_info)
+
+    def handle_update_check_failed(self, message):
+        print(f"Update check failed: {message}")
+
+    def start_update_install(self, update_info):
+        if self.update_thread:
+            QTimer.singleShot(100, lambda: self.start_update_install(update_info))
+            return
+        self.update_dialog = QMessageBox(self.active_window())
+        self.update_dialog.setWindowTitle("업데이트")
+        self.update_dialog.setText("업데이트 파일을 다운로드하고 있습니다.\n잠시만 기다려주세요.")
+        self.update_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        self.update_dialog.show()
+
+        self.update_thread = QThread()
+        self.update_worker = UpdateInstallWorker(update_info)
+        self.update_worker.moveToThread(self.update_thread)
+        self.update_thread.started.connect(self.update_worker.run)
+        self.update_worker.finished.connect(self.handle_update_install_finished)
+        self.update_worker.failed.connect(self.handle_update_install_failed)
+        self.update_worker.finished.connect(self.update_thread.quit)
+        self.update_worker.failed.connect(self.update_thread.quit)
+        self.update_worker.finished.connect(self.update_worker.deleteLater)
+        self.update_worker.failed.connect(self.update_worker.deleteLater)
+        self.update_thread.finished.connect(self.update_thread.deleteLater)
+        self.update_thread.finished.connect(self.clear_update_thread)
+        self.update_thread.start()
+
+    def handle_update_install_finished(self):
+        if self.update_dialog:
+            self.update_dialog.close()
+        QApplication.quit()
+
+    def handle_update_install_failed(self, message):
+        if self.update_dialog:
+            self.update_dialog.close()
+        QMessageBox.critical(
+            self.active_window(),
+            "업데이트 실패",
+            f"자동 업데이트에 실패했습니다.\n{message}",
+        )
+
+    def clear_update_thread(self):
+        self.update_thread = None
+        self.update_worker = None
 
 def main():
     init_db(); app = QApplication(sys.argv); app.setWindowIcon(QIcon(APP_ICON_PATH)); app.setStyleSheet(LIGHT_STYLE); controller = MainController(); controller.show_selector(); sys.exit(app.exec())
