@@ -1,9 +1,41 @@
 import sqlite3
 import os
+import shutil
+import sys
+from pathlib import Path
 
-DB_NAME = "household.db"
+APP_NAME = "HouseholdManager"
+DB_FILENAME = "household.db"
+LEGACY_DB_PATH = Path(DB_FILENAME).resolve()
+
+
+def get_app_data_dir():
+    if sys.platform == "win32":
+        base_dir = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base_dir) / APP_NAME
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_NAME
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / APP_NAME
+
+
+def get_db_path():
+    return get_app_data_dir() / DB_FILENAME
+
+
+DB_NAME = str(get_db_path())
+
+
+def migrate_legacy_db():
+    target_path = get_db_path()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists() or not LEGACY_DB_PATH.exists():
+        return
+    if LEGACY_DB_PATH == target_path:
+        return
+    shutil.copy2(LEGACY_DB_PATH, target_path)
 
 def init_db():
+    migrate_legacy_db()
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
@@ -155,6 +187,7 @@ def init_db():
     print(f"Database {DB_NAME} initialized correctly.")
 
 def get_db_connection():
+    get_db_path().parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_NAME)
 
 def log_query(query, params=None):
