@@ -491,9 +491,36 @@ class MainController:
             QTimer.singleShot(100, lambda: self.start_update_install(update_info))
             return
         self.update_dialog = QDialog(self.active_window())
+        self.update_dialog.setObjectName("UpdateDialog")
         self.update_dialog.setWindowTitle("업데이트")
         self.update_dialog.setModal(True)
         self.update_dialog.setFixedWidth(420)
+        self.update_dialog.setStyleSheet("""
+            QDialog#UpdateDialog {
+                background-color: #ffffff;
+                color: #202124;
+            }
+            QDialog#UpdateDialog QLabel {
+                color: #202124;
+                background: transparent;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QDialog#UpdateDialog QProgressBar {
+                background-color: #e8eaed;
+                color: #202124;
+                border: 1px solid #dadce0;
+                border-radius: 6px;
+                height: 18px;
+                text-align: center;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QDialog#UpdateDialog QProgressBar::chunk {
+                background-color: #1a73e8;
+                border-radius: 5px;
+            }
+        """)
         update_layout = QVBoxLayout(self.update_dialog)
         update_layout.setContentsMargins(24, 22, 24, 22)
         update_layout.setSpacing(12)
@@ -528,9 +555,11 @@ class MainController:
             self.update_progress_bar.setValue(max(0, min(100, percent)))
 
     def handle_update_install_finished(self):
-        if self.update_dialog:
-            self.update_dialog.close()
-        QApplication.quit()
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText("업데이트 적용을 위해 프로그램을 종료하고 재시작합니다.")
+        if hasattr(self, "update_progress_bar"):
+            self.update_progress_bar.setValue(100)
+        QTimer.singleShot(500, QApplication.quit)
 
     def handle_update_install_failed(self, message):
         if self.update_dialog:

@@ -108,7 +108,7 @@ def download_asset(update_info, progress_callback=None):
                     downloaded_mb = downloaded_size // 1024 // 1024
                     total_mb = total_size // 1024 // 1024
                     progress_callback(
-                        f"???? ??? ?????? ????. ({downloaded_mb}MB / {total_mb}MB)",
+                        f"업데이트 파일을 다운로드하고 있습니다. ({downloaded_mb}MB / {total_mb}MB)",
                         min(99, int(downloaded_size * 100 / total_size)),
                     )
     if progress_callback:
@@ -123,7 +123,7 @@ def install_update(update_info, progress_callback=None):
     downloaded_path = download_asset(update_info, progress_callback)
     if sys.platform == "win32":
         if progress_callback:
-            progress_callback("프로그램을 교체하기 위한 업데이트 스크립트를 준비하고 있습니다.", 100)
+            progress_callback("프로그램을 종료한 뒤 업데이트를 적용하고 재시작합니다.", 100)
         launch_windows_updater(downloaded_path)
         return
     if sys.platform == "darwin":
@@ -134,30 +134,75 @@ def install_update(update_info, progress_callback=None):
     raise RuntimeError("지원하지 않는 운영체제입니다.")
 
 
+def get_update_log_path():
+    if sys.platform == "win32":
+        base_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base_dir = Path.home() / "Library" / "Application Support"
+    else:
+        base_dir = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    log_dir = base_dir / "HouseholdManager" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "updater.log"
+
+
+def powershell_quote(value):
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def launch_windows_updater(downloaded_path):
     current_exe = Path(sys.executable).resolve()
-    script_path = downloaded_path.with_suffix(".bat")
+    current_pid = os.getpid()
+    log_path = get_update_log_path()
+    script_path = downloaded_path.with_suffix(".ps1")
     script_path.write_text(
         "\n".join(
             [
-                "@echo off",
-                "chcp 65001 >nul",
-                ":wait_app_exit",
-                f'copy /Y "{downloaded_path}" "{current_exe}"',
-                "if errorlevel 1 (",
-                "  timeout /t 1 /nobreak >nul",
-                "  goto wait_app_exit",
-                ")",
-                f'start "" "{current_exe}"',
-                f'del "{downloaded_path}"',
-                'del "%~f0"',
+                "$ErrorActionPreference = 'Stop'",
+                f"$LogPath = {powershell_quote(log_path)}",
+                "function Write-UpdateLog($Message) { Add-Content -LiteralPath $LogPath -Value ((Get-Date -Format o) + ' ' + $Message) }",
+                f"$ProcessIdToWait = {current_pid}",
+                f"$DownloadedPath = {powershell_quote(downloaded_path)}",
+                f"$TargetPath = {powershell_quote(current_exe)}",
+                "Write-UpdateLog \"updater started. pid=$ProcessIdToWait target=$TargetPath source=$DownloadedPath\"",
+                "try {",
+                "  Wait-Process -Id $ProcessIdToWait -Timeout 60 -ErrorAction SilentlyContinue",
+                "} catch {",
+                "  Write-UpdateLog \"wait failed: $($_.Exception.Message)\"",
+                "}",
+                "for ($Attempt = 1; $Attempt -le 60; $Attempt++) {",
+                "  try {",
+                "    Copy-Item -LiteralPath $DownloadedPath -Destination $TargetPath -Force",
+                "    Write-UpdateLog \"copy succeeded\"",
+                "    Start-Process -FilePath $TargetPath",
+                "    Write-UpdateLog \"restart launched\"",
+                "    Remove-Item -LiteralPath $DownloadedPath -Force -ErrorAction SilentlyContinue",
+                "    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
+                "    exit 0",
+                "  } catch {",
+                "    Write-UpdateLog \"copy retry $Attempt failed: $($_.Exception.Message)\"",
+                "    Start-Sleep -Seconds 1",
+                "  }",
+                "}",
+                "Write-UpdateLog \"copy failed after retries\"",
+                "exit 1",
             ]
         ),
         encoding="utf-8",
     )
+    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creation_flags |= subprocess.CREATE_NO_WINDOW
     subprocess.Popen(
-        ["cmd", "/c", str(script_path)],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script_path),
+        ],
+        creationflags=creation_flags,
     )
 
 
