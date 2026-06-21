@@ -9,7 +9,8 @@ if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
-                             QLabel, QPushButton, QInputDialog, QMessageBox, QFrame)
+                             QLabel, QPushButton, QInputDialog, QMessageBox, QFrame,
+                             QDialog, QProgressBar)
 from PyQt6.QtCore import QSize, Qt, QTimer, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon
 from database import init_db, get_households, add_household, delete_household, update_household_name
@@ -205,6 +206,7 @@ class UpdateCheckWorker(QObject):
 
 
 class UpdateInstallWorker(QObject):
+    progress = pyqtSignal(str, int)
     finished = pyqtSignal()
     failed = pyqtSignal(str)
 
@@ -214,7 +216,7 @@ class UpdateInstallWorker(QObject):
 
     def run(self):
         try:
-            install_update(self.update_info)
+            install_update(self.update_info, self.progress.emit)
             self.finished.emit()
         except Exception as error:
             self.failed.emit(str(error))
@@ -574,16 +576,27 @@ class MainController:
         if self.update_thread:
             QTimer.singleShot(100, lambda: self.start_update_install(update_info))
             return
-        self.update_dialog = QMessageBox(self.active_window())
+        self.update_dialog = QDialog(self.active_window())
         self.update_dialog.setWindowTitle("업데이트")
-        self.update_dialog.setText("업데이트 파일을 다운로드하고 있습니다.\n잠시만 기다려주세요.")
-        self.update_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        self.update_dialog.setModal(True)
+        self.update_dialog.setFixedWidth(420)
+        update_layout = QVBoxLayout(self.update_dialog)
+        update_layout.setContentsMargins(24, 22, 24, 22)
+        update_layout.setSpacing(12)
+        self.update_status_label = QLabel("업데이트를 준비하고 있습니다.")
+        self.update_status_label.setWordWrap(True)
+        self.update_progress_bar = QProgressBar()
+        self.update_progress_bar.setRange(0, 100)
+        self.update_progress_bar.setValue(0)
+        update_layout.addWidget(self.update_status_label)
+        update_layout.addWidget(self.update_progress_bar)
         self.update_dialog.show()
 
         self.update_thread = QThread()
         self.update_worker = UpdateInstallWorker(update_info)
         self.update_worker.moveToThread(self.update_thread)
         self.update_thread.started.connect(self.update_worker.run)
+        self.update_worker.progress.connect(self.handle_update_install_progress)
         self.update_worker.finished.connect(self.handle_update_install_finished)
         self.update_worker.failed.connect(self.handle_update_install_failed)
         self.update_worker.finished.connect(self.update_thread.quit)
@@ -593,6 +606,12 @@ class MainController:
         self.update_thread.finished.connect(self.update_thread.deleteLater)
         self.update_thread.finished.connect(self.clear_update_thread)
         self.update_thread.start()
+
+    def handle_update_install_progress(self, message, percent):
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(message)
+        if hasattr(self, "update_progress_bar"):
+            self.update_progress_bar.setValue(max(0, min(100, percent)))
 
     def handle_update_install_finished(self):
         if self.update_dialog:

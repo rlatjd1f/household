@@ -85,28 +85,50 @@ def check_for_update(current_version):
     return None
 
 
-def download_asset(update_info):
+def download_asset(update_info, progress_callback=None):
     target_dir = Path(tempfile.mkdtemp(prefix="household-update-"))
     target_path = target_dir / update_info.asset_name
     request = urllib.request.Request(
         update_info.download_url,
         headers={"User-Agent": "HouseholdManager-Updater"},
     )
+    if progress_callback:
+        progress_callback("업데이트 파일을 다운로드하고 있습니다.", 0)
     with urllib.request.urlopen(request, timeout=60) as response:
+        total_size = int(response.headers.get("Content-Length") or 0)
+        downloaded_size = 0
         with target_path.open("wb") as output:
-            shutil.copyfileobj(response, output)
+            while True:
+                chunk = response.read(1024 * 512)
+                if not chunk:
+                    break
+                output.write(chunk)
+                downloaded_size += len(chunk)
+                if progress_callback and total_size:
+                    downloaded_mb = downloaded_size // 1024 // 1024
+                    total_mb = total_size // 1024 // 1024
+                    progress_callback(
+                        f"???? ??? ?????? ????. ({downloaded_mb}MB / {total_mb}MB)",
+                        min(99, int(downloaded_size * 100 / total_size)),
+                    )
+    if progress_callback:
+        progress_callback("다운로드가 완료되었습니다. 업데이트를 준비하고 있습니다.", 100)
     return target_path
 
 
-def install_update(update_info):
+def install_update(update_info, progress_callback=None):
     if not getattr(sys, "frozen", False):
         raise RuntimeError("자동 업데이트는 배포된 실행 파일에서만 사용할 수 있습니다.")
 
-    downloaded_path = download_asset(update_info)
+    downloaded_path = download_asset(update_info, progress_callback)
     if sys.platform == "win32":
+        if progress_callback:
+            progress_callback("프로그램을 교체하기 위한 업데이트 스크립트를 준비하고 있습니다.", 100)
         launch_windows_updater(downloaded_path)
         return
     if sys.platform == "darwin":
+        if progress_callback:
+            progress_callback("업데이트 패키지를 압축 해제하고 있습니다.", 100)
         launch_macos_updater(downloaded_path)
         return
     raise RuntimeError("지원하지 않는 운영체제입니다.")
@@ -144,7 +166,7 @@ def get_current_app_bundle():
     for parent in [executable, *executable.parents]:
         if parent.suffix == ".app":
             return parent
-    raise RuntimeError("현재 macOS app bundle 경로를 찾지 못했습니다.")
+    raise RuntimeError("?? macOS app bundle ??? ?? ?????.")
 
 
 def launch_macos_updater(downloaded_path):
@@ -157,7 +179,7 @@ def launch_macos_updater(downloaded_path):
     if not new_app.exists():
         candidates = list(update_dir.glob("*.app"))
         if not candidates:
-            raise RuntimeError("업데이트 패키지에서 app bundle을 찾지 못했습니다.")
+            raise RuntimeError("???? ????? app bundle? ?? ?????.")
         new_app = candidates[0]
 
     script_path = downloaded_path.with_suffix(".sh")
