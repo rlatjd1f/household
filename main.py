@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
 from PyQt6.QtCore import QSize, Qt, QTimer, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon
 from database import init_db, get_households, add_household, delete_household, update_household_name
+from database import get_app_data_dir
 from ui.settings_tab import SettingsTab
 from ui.budget_tab import BudgetTab
 from ui.asset_tab import AssetTab
@@ -27,6 +28,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 APP_ICON_PATH = resource_path(os.path.join("assets", "icon", "app.ico"))
+LOG_DIR = get_app_data_dir() / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 UI_FONT_FAMILY = "'Malgun Gothic', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif" if sys.platform == "win32" else "'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif"
 
@@ -117,81 +120,6 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; b
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 """
 
-DARK_STYLE = COMMON_STYLE + """
-QMainWindow, QStackedWidget, QScrollArea, QScrollArea > QWidget { background-color: #202124; border: none; }
-#ScrollContent { background-color: #202124; }
-QWidget { color: #e8eaed; }
-QListWidget { background-color: #2d2e30; border-right: 1px solid #3c4043; }
-QListWidget::item { color: #9aa0a6; }
-QListWidget::item:selected { background-color: #3c4043; color: #8ab4f8; }
-QListWidget::item:hover:!selected { background-color: #35363a; }
-QHeaderView::section { background-color: #2d2e30; border-bottom: 2px solid #3c4043; color: #9aa0a6; }
-QHeaderView::section:vertical { background-color: #2d2e30; border-right: 1px solid #3c4043; }
-QTableWidget, QTreeWidget { background-color: #2d2e30; border: 1px solid #3c4043; gridline-color: #3c4043; selection-background-color: #3c4043; selection-color: #8ab4f8; outline: none; border-radius: 8px; }
-QTableWidget QWidget, QTreeWidget QWidget { background-color: #2d2e30; }
-QFrame[frameShape="5"], #ContentCard { background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 12px; }
-QLabel#SummaryLabel { font-weight: 600; font-size: 15px; background-color: #2d2e30; border: 1px solid #3c4043; border-radius: 8px; padding: 10px 15px; }
-QPushButton { background-color: #8ab4f8; color: #202124; border: 1px solid #8ab4f8; }
-QPushButton:hover { background-color: #aecbfa; }
-QPushButton#DeleteBtn { background-color: #3c4043; color: #e8eaed; border: 1px solid #5f6368; }
-QPushButton#SaveBtn { font-size: 16px; background: transparent; border: none; }
-QPushButton#SaveBtn:hover { background-color: #3c4043; border-radius: 15px; }
-
-QPushButton#MonthBtn {
-    background-color: #3c4043;
-    color: #9aa0a6;
-    border: none;
-    border-radius: 20px;
-    padding: 8px 15px;
-    font-weight: 500;
-}
-QPushButton#MonthBtn:hover {
-    background-color: #4d4d4d;
-}
-QPushButton#MonthBtn[active="true"] {
-    background-color: #8ab4f8;
-    color: #202124;
-    font-weight: bold;
-}
-QLineEdit, QSpinBox, QDateEdit, QComboBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; }
-QComboBox QAbstractItemView { 
-    background-color: #2d2e30; 
-    color: #e8eaed; 
-    border: 1px solid #5f6368; 
-    selection-background-color: #3c4043; 
-    selection-color: #8ab4f8; 
-    outline: none;
-    padding: 0px;
-    margin: 0px;
-}
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #5f6368; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #35363a; }
-QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #9aa0a6; width: 0; height: 0; }
-QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #8ab4f8; }
-QTabWidget::pane { border: 1px solid #3c4043; background: #2d2e30; }
-QTabBar::tab:selected { color: #8ab4f8; border-bottom: 2px solid #8ab4f8; }
-QMessageBox { background-color: #2d2e30; }
-QMessageBox QLabel { color: #e8eaed; font-size: 14px; }
-QMessageBox QPushButton { min-width: 80px; }
-QInputDialog { background-color: #2d2e30; }
-QInputDialog QLabel { color: #e8eaed; font-size: 14px; }
-QInputDialog QSpinBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; border-radius: 6px; padding: 8px 12px; }
-QInputDialog QPushButton { min-width: 80px; }
-QColorDialog { background-color: #2d2e30; color: #e8eaed; }
-QColorDialog QLabel { color: #e8eaed; }
-QColorDialog QFrame { background-color: #2d2e30; }
-QColorDialog QLineEdit, QColorDialog QSpinBox { background-color: #3c4043; border: 1px solid #5f6368; color: #e8eaed; border-radius: 6px; padding: 6px 10px; }
-QColorDialog QPushButton { min-width: 80px; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px 4px 2px; }
-QScrollBar::handle:vertical { background: #5f6368; border-radius: 4px; min-height: 32px; }
-QScrollBar::handle:vertical:hover { background: #80868b; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: transparent; border: none; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px 4px 2px 4px; }
-QScrollBar::handle:horizontal { background: #5f6368; border-radius: 4px; min-width: 32px; }
-QScrollBar::handle:horizontal:hover { background: #80868b; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
-"""
 
 
 class UpdateCheckWorker(QObject):
@@ -292,7 +220,7 @@ class AppWindow(QMainWindow):
     def __init__(self, hid, hname, on_back):
         super().__init__()
         self.hid = hid; self.hname = hname; self.on_back = on_back
-        self.setWindowTitle(f"Household Manager - {hname}"); self.resize(2000, 900); self.is_dark_mode = False
+        self.setWindowTitle(f"Household Manager - {hname}"); self.resize(2000, 900)
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.is_loading = True
         self.spinner_index = 0
@@ -300,11 +228,6 @@ class AppWindow(QMainWindow):
         central_widget = QWidget(); central_widget.setLayout(main_layout); self.setCentralWidget(central_widget)
 
         sidebar_container = QWidget(); sidebar_container.setFixedWidth(240); sidebar_layout = QVBoxLayout(sidebar_container); sidebar_layout.setContentsMargins(0, 10, 0, 10); sidebar_layout.setSpacing(5)
-        btn_row = QHBoxLayout(); btn_row.setContentsMargins(10, 0, 10, 0)
-        self.theme_btn = QPushButton("🌙 테마"); self.theme_btn.setFlat(True); self.theme_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
-        self.theme_btn.clicked.connect(self.toggle_theme)
-        btn_row.addWidget(self.theme_btn); sidebar_layout.addLayout(btn_row)
-
         excel_btn_row = QHBoxLayout(); excel_btn_row.setContentsMargins(10, 0, 10, 0)
         self.import_btn = QPushButton("📂 엑셀 임포트"); self.import_btn.setFlat(True); self.import_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
         self.import_btn.clicked.connect(self.handle_excel_import)
@@ -384,7 +307,6 @@ class AppWindow(QMainWindow):
 
     def set_loading_controls_enabled(self, enabled):
         self.sidebar.setEnabled(enabled)
-        self.theme_btn.setEnabled(enabled)
         self.import_btn.setEnabled(enabled)
         self.export_btn.setEnabled(enabled)
         self.back_btn.setEnabled(enabled)
@@ -438,14 +360,6 @@ class AppWindow(QMainWindow):
         self.sidebar.currentRowChanged.connect(self.handle_navigation)
         self.set_loading_controls_enabled(True)
         self.sidebar.setCurrentRow(0)
-
-    def toggle_theme(self):
-        self.is_dark_mode = not self.is_dark_mode
-        QApplication.instance().setStyleSheet(DARK_STYLE if self.is_dark_mode else LIGHT_STYLE)
-        self.theme_btn.setText("☀️ 테마" if self.is_dark_mode else "🌙 테마")
-        current_widget = self.content_stack.currentWidget()
-        if hasattr(current_widget, 'load_data'): current_widget.load_data()
-        if hasattr(current_widget, 'refresh_data'): current_widget.refresh_data()
 
     def handle_excel_import(self):
         from PyQt6.QtWidgets import QFileDialog; from ui.migration_util import import_from_excel

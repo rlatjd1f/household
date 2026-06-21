@@ -29,6 +29,7 @@ plt.rcParams['xtick.labelsize'] = CHART_NUMBER_FONT_SIZE
 plt.rcParams['ytick.labelsize'] = CHART_NUMBER_FONT_SIZE
 plt.rcParams['legend.fontsize'] = CHART_LEGEND_FONT_SIZE
 
+
 class ReportSection(QFrame):
     def __init__(self, title):
         super().__init__()
@@ -339,6 +340,9 @@ class YearlyReportTab(QWidget):
         ax.tick_params(axis='both', colors='#5f6368', labelsize=CHART_NUMBER_FONT_SIZE)
         if format_y: ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
         if format_x: ax.xaxis.set_major_formatter(FuncFormatter(comma_formatter))
+
+    def is_dark(self):
+        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
 
     def load_data(self):
         if self.hid is None: return
