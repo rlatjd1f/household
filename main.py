@@ -246,6 +246,10 @@ class HouseholdSelector(QWidget):
         self.delete_btn = QPushButton("🗑️ 삭제"); self.delete_btn.setObjectName("DeleteBtn"); self.delete_btn.clicked.connect(self.handle_delete)
         btn_layout.addWidget(self.create_btn); btn_layout.addWidget(self.rename_btn); btn_layout.addWidget(self.delete_btn); layout.addLayout(btn_layout)
         self.select_btn = QPushButton("선택 완료 (더블클릭 가능)"); self.select_btn.setFixedHeight(50); self.select_btn.setStyleSheet("font-size: 16px; font-weight: bold;"); self.select_btn.clicked.connect(self.handle_select); layout.addWidget(self.select_btn)
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet("color: #9aa0a6; font-size: 12px; font-weight: 500;")
+        layout.addWidget(version_label)
         self.refresh_list()
 
 
@@ -311,6 +315,11 @@ class AppWindow(QMainWindow):
         back_btn_row.addWidget(self.back_btn); sidebar_layout.addLayout(back_btn_row)
 
         self.sidebar = QListWidget(); sidebar_layout.addWidget(self.sidebar); main_layout.addWidget(sidebar_container)
+        sidebar_layout.addStretch()
+        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.version_label.setStyleSheet("color: #9aa0a6; font-size: 12px; font-weight: 500; padding: 6px 0;")
+        sidebar_layout.addWidget(self.version_label)
 
         content_container = QVBoxLayout(); content_container.setContentsMargins(30, 20, 30, 20); self.content_stack = QStackedWidget(); content_container.addWidget(self.content_stack); main_layout.addLayout(content_container)
 
