@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
                              QHeaderView, QSpinBox, QStyledItemDelegate, QLineEdit, QInputDialog)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QColor, QIntValidator
 from database import get_detailed_budgets, save_detailed_budget
 
@@ -39,7 +39,7 @@ class BudgetTab(QWidget):
         
         self.year_spin = QSpinBox()
         self.year_spin.setRange(2000, 2100)
-        self.year_spin.setValue(2026)
+        self.year_spin.setValue(QDate.currentDate().year())
         self.year_spin.setFixedWidth(100)
         self.year_spin.valueChanged.connect(self.load_data)
         

@@ -10,8 +10,8 @@ if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
                              QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, 
                              QLabel, QPushButton, QInputDialog, QMessageBox, QFrame,
-                             QDialog, QProgressBar)
-from PyQt6.QtCore import QSize, Qt, QTimer, QObject, QThread, pyqtSignal
+                             QDialog, QProgressBar, QSpinBox)
+from PyQt6.QtCore import QSize, Qt, QTimer, QObject, QThread, pyqtSignal, QDate
 from PyQt6.QtGui import QFont, QColor, QIcon
 from database import init_db, get_households, add_household, delete_household, update_household_name
 from database import get_app_data_dir
@@ -239,6 +239,12 @@ class AppWindow(QMainWindow):
         self.back_btn = QPushButton("⬅️ 가계부 선택 이동"); self.back_btn.setFlat(True); self.back_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px; margin-top: 5px;"); self.back_btn.clicked.connect(self.on_back)
         back_btn_row.addWidget(self.back_btn); sidebar_layout.addLayout(back_btn_row)
 
+        year_row = QHBoxLayout(); year_row.setContentsMargins(20, 5, 20, 0)
+        year_label = QLabel("📅 가계부 연도"); year_label.setStyleSheet("font-size: 13px; font-weight: bold;")
+        self.year_spin = QSpinBox(); self.year_spin.setRange(2000, 2100); self.year_spin.setValue(QDate.currentDate().year()); self.year_spin.setFixedWidth(90)
+        self.year_spin.valueChanged.connect(self.handle_year_change)
+        year_row.addWidget(year_label); year_row.addStretch(); year_row.addWidget(self.year_spin); sidebar_layout.addLayout(year_row)
+
         self.sidebar = QListWidget(); sidebar_layout.addWidget(self.sidebar); main_layout.addWidget(sidebar_container)
         sidebar_layout.addStretch()
         self.version_label = QLabel(f"v{APP_VERSION}")
@@ -310,6 +316,7 @@ class AppWindow(QMainWindow):
         self.import_btn.setEnabled(enabled)
         self.export_btn.setEnabled(enabled)
         self.back_btn.setEnabled(enabled)
+        self.year_spin.setEnabled(enabled)
 
     def start_page_loading(self):
         self.pages = {}
@@ -360,6 +367,12 @@ class AppWindow(QMainWindow):
         self.sidebar.currentRowChanged.connect(self.handle_navigation)
         self.set_loading_controls_enabled(True)
         self.sidebar.setCurrentRow(0)
+
+    def handle_year_change(self, year):
+        current = self.content_stack.currentWidget()
+        # 보이지 않는 월 페이지는 이동할 때 handle_navigation에서 새로 불러옴
+        for widget in self.month_pages.values():
+            widget.set_year(year, refresh=widget is current)
 
     def handle_excel_import(self):
         from PyQt6.QtWidgets import QFileDialog; from ui.migration_util import import_from_excel

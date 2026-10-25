@@ -174,7 +174,7 @@ class LedgerTab(QWidget):
         super().__init__()
         self.hid = hid
         self.month = month
-        self.year = 2026
+        self.year = QDate.currentDate().year()
         self.category_color_map = {}
         self.init_ui()
         self.refresh_data()
@@ -247,6 +247,10 @@ class LedgerTab(QWidget):
                     break
             table.setRowHidden(row, not match)
         self.refresh_summary()
+
+    def set_year(self, year, refresh=True):
+        self.year = year
+        if refresh: self.refresh_data()
 
     def refresh_data(self):
         if self.hid is None: return
