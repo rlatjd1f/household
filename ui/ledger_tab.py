@@ -2,9 +2,9 @@ import re
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
                              QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit,
-                             QSplitter)
+                             QSplitter, QAbstractItemView, QAbstractItemDelegate)
 from PyQt6.QtCore import Qt, QTimer, QDate
-from PyQt6.QtGui import QColor, QBrush
+from PyQt6.QtGui import QColor, QBrush, QShortcut, QKeySequence
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry,
                       delete_ledger_entry, get_categories, get_assets)
 
@@ -63,6 +63,8 @@ class StyledComboBox(QComboBox):
         self.row_idx = row
         self.col_idx = col
         self.spreadsheet = spreadsheet
+        # 엔터로 입력한 글자가 목록 항목으로 추가되지 않도록 함
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.currentTextChanged.connect(self.setToolTip)
 
     def show_text_start(self):
@@ -81,6 +83,12 @@ class StyledComboBox(QComboBox):
     def keyPressEvent(self, event):
         if event.key() in [Qt.Key.Key_Down, Qt.Key.Key_Up] and not self.view().isVisible():
             self.showPopup()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.spreadsheet and not self.view().isVisible():
+            super().keyPressEvent(event)
+            index = self.spreadsheet.indexAt(self.pos())
+            if index.isValid():
+                self.spreadsheet.setCurrentCell(index.row(), index.column())
+                self.spreadsheet.move_to_next_row(index.column())
         else:
             super().keyPressEvent(event)
 
@@ -202,10 +210,10 @@ class LedgerSpreadsheet(QTableWidget):
 
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
             asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
-            
+
             if not date:
                 QMessageBox.warning(self, "저장 실패", "날짜를 입력해 주세요.")
-                return
+                return False
             if entry_id:
                 saved = update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             else:
@@ -217,7 +225,7 @@ class LedgerSpreadsheet(QTableWidget):
                     self.blockSignals(False)
             if not saved:
                 QMessageBox.warning(self, "저장 실패", "내역을 저장하지 못했습니다.")
-                return
+                return False
 
             self.blockSignals(True)
             date_item = self.item(row, 1)
@@ -228,8 +236,50 @@ class LedgerSpreadsheet(QTableWidget):
             self.set_save_status(saved_id_item.row(), True)
             self.scrollToItem(saved_id_item)
             self.ledger_tab.refresh_summary()
+            return True
         except Exception as e:
             QMessageBox.critical(self, "저장 실패", f"저장 중 오류 발생: {e}")
+            return False
+
+    def unsaved_rows(self):
+        save_col = self.columnCount() - 1
+        return [r for r in range(self.rowCount())
+                if isinstance(self.cellWidget(r, save_col), QPushButton) and self.cellWidget(r, save_col).text() == "❓"]
+
+    def save_all_rows(self):
+        """저장하지 않은 행을 모두 저장하고 (저장, 실패) 건수를 반환"""
+        # 저장 중 정렬/이동으로 행 번호가 바뀌므로 날짜 셀 항목으로 행을 추적
+        items = [self.item(r, 1) for r in self.unsaved_rows()]
+        saved = failed = 0
+        for item in items:
+            if self.save_row_to_db(item.row()): saved += 1
+            else: failed += 1
+        return saved, failed
+
+    def move_to_next_row(self, col):
+        """엑셀처럼 아래 행으로 이동하고, 마지막 행이면 새 행을 추가"""
+        col = max(col, 1)
+        row = self.currentRow()
+        next_row = next((r for r in range(row + 1, self.rowCount()) if not self.isRowHidden(r)), None)
+        if next_row is None:
+            self.ledger_tab.add_row(self)
+            next_row = self.rowCount() - 1
+        self.setCurrentCell(next_row, col)
+        widget = self.cellWidget(next_row, col)
+        (widget or self).setFocus()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.state() != QAbstractItemView.State.EditingState:
+            self.move_to_next_row(self.currentColumn())
+            return
+        super().keyPressEvent(event)
+
+    def closeEditor(self, editor, hint):
+        super().closeEditor(editor, hint)
+        # 셀 편집 중 엔터(SubmitModelCache)로 입력을 마치면 아래 행으로 이동
+        if hint == QAbstractItemDelegate.EndEditHint.SubmitModelCache:
+            col = self.currentColumn()
+            QTimer.singleShot(0, lambda: self.move_to_next_row(col))
 
     def get_val(self, row, col):
         widget = self.cellWidget(row, col)
@@ -281,6 +331,18 @@ class LedgerTab(QWidget):
         content_layout.setStretchFactor(1, 7)
         layout.addWidget(content_layout, 1)
 
+        save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        save_shortcut.activated.connect(self.save_all)
+
+    def save_all(self, tables=None):
+        saved = failed = 0
+        for table in tables or (self.expense_table, self.income_table):
+            s, f = table.save_all_rows()
+            saved += s; failed += f
+        if failed:
+            QMessageBox.warning(self, "모두 저장", f"{saved}건을 저장했고 {failed}건은 저장하지 않았습니다.")
+
     def create_section(self, title, etype, columns):
         box = QFrame()
         box.setObjectName("ContentCard")
@@ -313,9 +375,14 @@ class LedgerTab(QWidget):
         del_btn.setObjectName("DeleteBtn")
         del_btn.clicked.connect(lambda chk, tbl=table: self.delete_row(tbl))
         
+        save_all_btn = QPushButton("💾 모두 저장")
+        save_all_btn.setToolTip("저장하지 않은 행(❓)을 모두 저장합니다. (Ctrl+S: 지출·소득 모두)")
+        save_all_btn.clicked.connect(lambda chk, tbl=table: self.save_all([tbl]))
+
         btns.addWidget(add_btn)
         btns.addWidget(del_btn)
         btns.addStretch()
+        btns.addWidget(save_all_btn)
         
         vbox.addWidget(table)
         vbox.addLayout(btns)
@@ -332,13 +399,7 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def has_unsaved_changes(self):
-        for table in (self.expense_table, self.income_table):
-            save_col = table.columnCount() - 1
-            for row in range(table.rowCount()):
-                btn = table.cellWidget(row, save_col)
-                if isinstance(btn, QPushButton) and btn.text() == "❓":
-                    return True
-        return False
+        return any(table.unsaved_rows() for table in (self.expense_table, self.income_table))
 
     def set_year(self, year, refresh=True):
         self.year = year
