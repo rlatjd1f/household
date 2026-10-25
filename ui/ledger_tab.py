@@ -3,8 +3,11 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit)
 from PyQt6.QtCore import Qt, QTimer, QDate
 from PyQt6.QtGui import QColor, QBrush
-from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry, 
+from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry,
                       delete_ledger_entry, get_categories, get_assets)
+
+BUDGET_OVER_COLOR = "#d93025"
+BUDGET_OK_COLOR = "#188038"
 
 class NumericTableWidgetItem(QTableWidgetItem):
     """Custom TableWidgetItem that sorts numerically instead of alphabetically."""
@@ -507,7 +510,12 @@ class LedgerTab(QWidget):
             return total
         exp = sum_table(self.expense_table, 6)
         remaining = monthly_total_budget - exp
-        self.summary_label.setText(f"월 예산: {monthly_total_budget:,} | 지출: {exp:,} | 남은 예산: {remaining:,}")
+        # 예산 초과: 빨간색, 초과하지 않음: 초록색
+        status_color = BUDGET_OVER_COLOR if remaining < 0 else BUDGET_OK_COLOR
+        self.summary_label.setText(
+            f"월 예산: {monthly_total_budget:,} | 지출: <span style='color:{status_color};'>{exp:,}</span> | "
+            f"남은 예산: <span style='color:{status_color};'>{remaining:,}</span>"
+        )
 
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"

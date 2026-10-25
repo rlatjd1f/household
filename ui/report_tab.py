@@ -180,7 +180,7 @@ class MonthlyReportTab(QWidget):
         budget_data = get_detailed_budgets(self.hid, self.year)
         monthly_budget = sum(c.get(self.month, 0) for c in budget_data.values())
         diff = total_exp - monthly_budget
-        diff_text = f"<span style='color:#d93025;'>{diff:,}원 초과</span>" if diff > 0 else f"<span style='color:#1a73e8;'>{abs(diff):,}원 절약</span>"
+        diff_text = f"<span style='color:#d93025;'>{diff:,}원 초과</span>" if diff > 0 else f"<span style='color:#188038;'>{abs(diff):,}원 절약</span>"
         
         self.card_budget.clear_content()
         self.card_budget.content_layout.addWidget(QLabel(f"<span style='font-size:18px;'>예산 {monthly_budget:,}원 중 <b>{total_exp:,}원</b> 지출</span>"))
