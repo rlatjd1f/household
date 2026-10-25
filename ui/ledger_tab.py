@@ -138,20 +138,26 @@ class LedgerSpreadsheet(QTableWidget):
             cat_id = self.ledger_tab.resolve_category_id(self.entry_type, parent, sub)
             asset_id = self.ledger_tab.resolve_asset_id(self.entry_type, pay_method, asset_name)
             
+            if not date:
+                QMessageBox.warning(self, "저장 실패", "날짜를 입력해 주세요.")
+                return
             if entry_id:
-                update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                saved = update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             else:
-                if date:
-                    new_id = add_ledger_entry(self.ledger_tab.hid, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
-                    if new_id:
-                        self.blockSignals(True)
-                        self.setItem(row, 0, QTableWidgetItem(str(new_id)))
-                        self.blockSignals(False)
-            
+                new_id = add_ledger_entry(self.ledger_tab.hid, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
+                saved = bool(new_id)
+                if new_id:
+                    self.blockSignals(True)
+                    self.setItem(row, 0, QTableWidgetItem(str(new_id)))
+                    self.blockSignals(False)
+            if not saved:
+                QMessageBox.warning(self, "저장 실패", "내역을 저장하지 못했습니다.")
+                return
+
             self.set_save_status(row, True)
             self.ledger_tab.refresh_summary()
         except Exception as e:
-            print(f"DEBUG Save error: {e}")
+            QMessageBox.critical(self, "저장 실패", f"저장 중 오류 발생: {e}")
         finally:
             self.setSortingEnabled(sorting_was_enabled)
 
@@ -176,6 +182,7 @@ class LedgerTab(QWidget):
         self.month = month
         self.year = QDate.currentDate().year()
         self.category_color_map = {}
+        self.category_cache = {}
         self.init_ui()
         self.refresh_data()
 
@@ -248,6 +255,15 @@ class LedgerTab(QWidget):
             table.setRowHidden(row, not match)
         self.refresh_summary()
 
+    def has_unsaved_changes(self):
+        for table in (self.expense_table, self.income_table):
+            save_col = table.columnCount() - 1
+            for row in range(table.rowCount()):
+                btn = table.cellWidget(row, save_col)
+                if isinstance(btn, QPushButton) and btn.text() == "❓":
+                    return True
+        return False
+
     def set_year(self, year, refresh=True):
         self.year = year
         if refresh: self.refresh_data()
@@ -289,11 +305,18 @@ class LedgerTab(QWidget):
         self.refresh_summary()
 
     def refresh_category_colors(self):
+        self.category_cache = {db_type: [] for db_type in ["소비", "소득", "결제수단"]}
+        for category in get_categories(self.hid):
+            if category[1] in self.category_cache:
+                self.category_cache[category[1]].append(category)
         self.category_color_map = {}
         for db_type in ["소비", "소득"]:
-            for category in get_categories(self.hid, db_type):
+            for category in self.category_cache[db_type]:
                 if len(category) > 4 and category[4]:
                     self.category_color_map[(category[1], category[2], category[3])] = category[4]
+
+    def cached_categories(self, db_type):
+        return self.category_cache.get(db_type, [])
 
     def get_text_color_for_background(self, color):
         qcolor = QColor(color)
@@ -409,13 +432,12 @@ class LedgerTab(QWidget):
         if isinstance(child_combo, QComboBox):
             child_combo.blockSignals(True)
             child_combo.clear()
-            from database import get_categories
             if ctype == "수단명":
-                items = [c[3] for c in get_categories(self.hid, "결제수단") if c[2] == parent_val]
+                items = [c[3] for c in self.cached_categories("결제수단") if c[2] == parent_val]
             elif ctype == "소비_중":
-                items = [c[3] for c in get_categories(self.hid, "소비") if c[2] == parent_val]
+                items = [c[3] for c in self.cached_categories("소비") if c[2] == parent_val]
             elif ctype == "소득_중":
-                items = [c[3] for c in get_categories(self.hid, "소득") if c[2] == parent_val]
+                items = [c[3] for c in self.cached_categories("소득") if c[2] == parent_val]
             else:
                 items = []
             child_combo.addItems(items)
@@ -425,22 +447,21 @@ class LedgerTab(QWidget):
             child_combo.blockSignals(False)
 
     def populate_combo(self, combo, ctype, table, row, col):
-        from database import get_categories
         if ctype == "결제수단":
-            items = sorted(list(set(c[2] for c in get_categories(self.hid, "결제수단"))))
+            items = sorted(list(set(c[2] for c in self.cached_categories("결제수단"))))
         elif ctype == "수단명":
             p = table.get_val(row, 2)
-            items = [c[3] for c in get_categories(self.hid, "결제수단") if c[2] == p]
+            items = [c[3] for c in self.cached_categories("결제수단") if c[2] == p]
         elif ctype == "소비_대":
-            items = sorted(list(set(c[2] for c in get_categories(self.hid, "소비"))))
+            items = sorted(list(set(c[2] for c in self.cached_categories("소비"))))
         elif ctype == "소비_중":
             p = table.get_val(row, 4)
-            items = [c[3] for c in get_categories(self.hid, "소비") if c[2] == p]
+            items = [c[3] for c in self.cached_categories("소비") if c[2] == p]
         elif ctype == "소득_대":
-            items = sorted(list(set(c[2] for c in get_categories(self.hid, "소득"))))
+            items = sorted(list(set(c[2] for c in self.cached_categories("소득"))))
         elif ctype == "소득_중":
             p = table.get_val(row, 2)
-            items = [c[3] for c in get_categories(self.hid, "소득") if c[2] == p]
+            items = [c[3] for c in self.cached_categories("소득") if c[2] == p]
         else:
             items = []
         combo.addItems(items)
@@ -463,6 +484,9 @@ class LedgerTab(QWidget):
     def delete_row(self, table):
         row = table.currentRow()
         if row < 0: return
+        confirm = QMessageBox.question(self, "삭제 확인", "선택한 행을 삭제하시겠습니까?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm != QMessageBox.StandardButton.Yes: return
         id_item = table.item(row, 0)
         if id_item and id_item.text():
             delete_ledger_entry(int(id_item.text()))
@@ -487,14 +511,12 @@ class LedgerTab(QWidget):
 
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"
-        from database import get_categories
-        for c in get_categories(self.hid, db_type):
+        for c in self.cached_categories(db_type):
             if c[2] == p and c[3] == s: return c[0]
         return None
 
     def resolve_asset_id(self, etype, pm, an):
-        from database import get_categories
         if etype == "지출":
-            for c in get_categories(self.hid, "결제수단"):
+            for c in self.cached_categories("결제수단"):
                 if c[2] == pm and c[3] == an: return c[0]
         return None

@@ -223,6 +223,7 @@ class AppWindow(QMainWindow):
         self.setWindowTitle(f"Household Manager - {hname}"); self.resize(2000, 900)
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.is_loading = True
+        self.current_sidebar_row = 0
         self.spinner_index = 0
         main_layout = QHBoxLayout(); main_layout.setContentsMargins(0, 0, 0, 0); main_layout.setSpacing(0)
         central_widget = QWidget(); central_widget.setLayout(main_layout); self.setCentralWidget(central_widget)
@@ -236,7 +237,7 @@ class AppWindow(QMainWindow):
         excel_btn_row.addWidget(self.import_btn); excel_btn_row.addWidget(self.export_btn); sidebar_layout.addLayout(excel_btn_row)
 
         back_btn_row = QHBoxLayout(); back_btn_row.setContentsMargins(10, 0, 10, 0)
-        self.back_btn = QPushButton("⬅️ 가계부 선택 이동"); self.back_btn.setFlat(True); self.back_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px; margin-top: 5px;"); self.back_btn.clicked.connect(self.on_back)
+        self.back_btn = QPushButton("⬅️ 가계부 선택 이동"); self.back_btn.setFlat(True); self.back_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px; margin-top: 5px;"); self.back_btn.clicked.connect(self.handle_back)
         back_btn_row.addWidget(self.back_btn); sidebar_layout.addLayout(back_btn_row)
 
         year_row = QHBoxLayout(); year_row.setContentsMargins(20, 5, 20, 0)
@@ -368,14 +369,34 @@ class AppWindow(QMainWindow):
         self.set_loading_controls_enabled(True)
         self.sidebar.setCurrentRow(0)
 
+    def confirm_discard_unsaved(self):
+        current = self.content_stack.currentWidget()
+        if not isinstance(current, LedgerTab) or not current.has_unsaved_changes():
+            return True
+        reply = QMessageBox.question(
+            self, "저장하지 않은 내역",
+            "저장하지 않은 행(❓)이 있습니다.\n계속하면 변경 내용이 사라집니다. 계속하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def handle_back(self):
+        if self.confirm_discard_unsaved(): self.on_back()
+
     def handle_year_change(self, year):
         current = self.content_stack.currentWidget()
+        if not self.confirm_discard_unsaved():
+            self.year_spin.blockSignals(True)
+            self.year_spin.setValue(self.month_pages[1].year)
+            self.year_spin.blockSignals(False)
+            return
         # 보이지 않는 월 페이지는 이동할 때 handle_navigation에서 새로 불러옴
         for widget in self.month_pages.values():
             widget.set_year(year, refresh=widget is current)
 
     def handle_excel_import(self):
         from PyQt6.QtWidgets import QFileDialog; from ui.migration_util import import_from_excel
+        if not self.confirm_discard_unsaved(): return
         file_path, _ = QFileDialog.getOpenFileName(self, "엑셀 가져오기", "", "Excel Files (*.xlsx *.xls)")
         if file_path and import_from_excel(self.hid, file_path, self):
             for i in range(self.content_stack.count()):
@@ -438,6 +459,12 @@ class AppWindow(QMainWindow):
         if 0 <= row <= 4: idx = row
         elif 6 <= row <= 17: idx = 5 + (row - 6)
         if idx != -1:
+            if idx != self.content_stack.currentIndex() and not self.confirm_discard_unsaved():
+                self.sidebar.blockSignals(True)
+                self.sidebar.setCurrentRow(self.current_sidebar_row)
+                self.sidebar.blockSignals(False)
+                return
+            self.current_sidebar_row = row
             self.content_stack.setCurrentIndex(idx)
             w = self.content_stack.currentWidget()
             if hasattr(w, 'load_data'): w.load_data()
