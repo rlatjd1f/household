@@ -19,6 +19,16 @@ class NumericTableWidgetItem(QTableWidgetItem):
         except:
             return super().__lt__(other)
 
+class DateTableWidgetItem(QTableWidgetItem):
+    """Date cell that sorts ascending, keeping unsaved new rows below saved rows."""
+    def is_new_row(self):
+        return self.data(Qt.ItemDataRole.UserRole) == "new"
+
+    def __lt__(self, other):
+        if isinstance(other, DateTableWidgetItem) and self.is_new_row() != other.is_new_row():
+            return other.is_new_row()
+        return self.text() < other.text()
+
 class DateDelegate(QStyledItemDelegate):
     """Delegate that uses QDateEdit with Up/Down adjustment for Date cells."""
     def createEditor(self, parent, option, index):
@@ -80,11 +90,16 @@ class LedgerSpreadsheet(QTableWidget):
         self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
         self.setColumnHidden(0, True)
-        self.setSortingEnabled(True)
+        # 헤더 클릭 정렬은 사용하지 않고 항상 날짜 오름차순으로 유지 (sort_by_date)
+        self.setSortingEnabled(False)
 
         self.date_delegate = DateDelegate(self)
         self.setItemDelegateForColumn(1, self.date_delegate)
         self.itemChanged.connect(self.handle_item_changed)
+
+    def sort_by_date(self):
+        # 같은 날짜끼리는 기존 순서(입력 순서)를 유지하는 안정 정렬
+        self.sortItems(1, Qt.SortOrder.AscendingOrder)
 
     def handle_item_changed(self, item):
         if self.signalsBlocked(): return
@@ -111,9 +126,6 @@ class LedgerSpreadsheet(QTableWidget):
 
     def save_row_to_db(self, row):
         if self.signalsBlocked() or row < 0 or row >= self.rowCount(): return
-        
-        sorting_was_enabled = self.isSortingEnabled()
-        self.setSortingEnabled(False)
         
         id_item = self.item(row, 0)
         if not id_item: return
@@ -157,12 +169,17 @@ class LedgerSpreadsheet(QTableWidget):
                 QMessageBox.warning(self, "저장 실패", "내역을 저장하지 못했습니다.")
                 return
 
-            self.set_save_status(row, True)
+            self.blockSignals(True)
+            date_item = self.item(row, 1)
+            if date_item: date_item.setData(Qt.ItemDataRole.UserRole, None)
+            saved_id_item = self.item(row, 0)
+            self.sort_by_date()
+            self.blockSignals(False)
+            self.set_save_status(saved_id_item.row(), True)
+            self.scrollToItem(saved_id_item)
             self.ledger_tab.refresh_summary()
         except Exception as e:
             QMessageBox.critical(self, "저장 실패", f"저장 중 오류 발생: {e}")
-        finally:
-            self.setSortingEnabled(sorting_was_enabled)
 
     def get_val(self, row, col):
         widget = self.cellWidget(row, col)
@@ -274,8 +291,6 @@ class LedgerTab(QWidget):
     def refresh_data(self):
         if self.hid is None: return
         self.refresh_category_colors()
-        self.income_table.setSortingEnabled(False)
-        self.expense_table.setSortingEnabled(False)
         self.income_table.blockSignals(True)
         self.expense_table.blockSignals(True)
         
@@ -303,8 +318,8 @@ class LedgerTab(QWidget):
                 
         self.income_table.blockSignals(False)
         self.expense_table.blockSignals(False)
-        self.income_table.setSortingEnabled(True)
-        self.expense_table.setSortingEnabled(True)
+        self.income_table.sort_by_date()
+        self.expense_table.sort_by_date()
         self.refresh_summary()
 
     def refresh_category_colors(self):
@@ -398,6 +413,8 @@ class LedgerTab(QWidget):
                 combo.currentTextChanged.connect(lambda t, tbl=table, cmb=combo, c=col: self.handle_combo_value_change(tbl, cmb, c, t))
             
             table.setCellWidget(row, col, combo)
+        elif col == 1:
+            table.setItem(row, col, DateTableWidgetItem(val or ""))
         elif col == amt_col:
             table.setItem(row, col, NumericTableWidgetItem(val or "0"))
         else:
@@ -470,19 +487,23 @@ class LedgerTab(QWidget):
         combo.addItems(items)
 
     def add_row(self, table):
-        table.setSortingEnabled(False)
         table.blockSignals(True)
+        # 새 행은 항상 마지막 행 아래에 생성하고, 저장 시 날짜 순서 자리로 이동
         row = table.rowCount()
         table.insertRow(row)
         table.setItem(row, 0, QTableWidgetItem(""))
-        table.setItem(row, 1, QTableWidgetItem(f"{self.year}-{self.month:02d}-01"))
+        today = QDate.currentDate()
+        day = today.day() if (today.year(), today.month()) == (self.year, self.month) else 1
+        date_item = DateTableWidgetItem(f"{self.year}-{self.month:02d}-{day:02d}")
+        date_item.setData(Qt.ItemDataRole.UserRole, "new")
+        table.setItem(row, 1, date_item)
         for col in range(2, table.columnCount() - 1):
             dv = "0" if (table.entry_type=="지출" and col==6) or (table.entry_type=="수입" and col==4) else ""
             self.set_table_item(table, row, col, dv)
         self.add_save_button(table, row, False)
-        table.scrollToBottom()
         table.blockSignals(False)
-        table.setSortingEnabled(True)
+        table.scrollToBottom()
+        table.setCurrentCell(row, 1)
 
     def delete_row(self, table):
         row = table.currentRow()
