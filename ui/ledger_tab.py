@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
-                             QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit)
+                             QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit,
+                             QSplitter)
 from PyQt6.QtCore import Qt, QTimer, QDate
 from PyQt6.QtGui import QColor, QBrush
 from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry,
@@ -54,6 +55,20 @@ class StyledComboBox(QComboBox):
         self.row_idx = row
         self.col_idx = col
         self.spreadsheet = spreadsheet
+        self.currentTextChanged.connect(self.setToolTip)
+
+    def show_text_start(self):
+        # 편집 가능한 콤보는 커서가 끝에 있어 긴 이름의 앞부분이 잘려 보이므로 처음부터 표시
+        if self.lineEdit() and not self.lineEdit().hasFocus():
+            self.lineEdit().setCursorPosition(0)
+
+    def setCurrentText(self, text):
+        super().setCurrentText(text)
+        self.show_text_start()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.show_text_start()
 
     def keyPressEvent(self, event):
         if event.key() in [Qt.Key.Key_Down, Qt.Key.Key_Up] and not self.view().isVisible():
@@ -75,17 +90,24 @@ class LedgerSpreadsheet(QTableWidget):
         headers = ["ID"] + display_cols
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.setColumnWidth(1, 120)
-        
-        amt_col = 6 if self.entry_type == "지출" else 4
-        self.horizontalHeader().setSectionResizeMode(amt_col, QHeaderView.ResizeMode.Fixed)
-        self.setColumnWidth(amt_col, 120)
+        header = self.horizontalHeader()
+        # 열 너비는 사용자가 조절할 수 있고, 마지막 텍스트 열(코멘트/소득처)이 남는 공간을 차지
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        if self.entry_type == "지출":
+            widths = {1: 92, 2: 100, 3: 110, 4: 132, 5: 118, 6: 95, 7: 105}
+            stretch_col, stretch_min = 8, 160
+        else:
+            widths = {1: 92, 2: 100, 3: 95, 4: 95}
+            stretch_col, stretch_min = 5, 100
+        for col, width in widths.items():
+            self.setColumnWidth(col, width)
+        self.stretch_col, self.stretch_min = stretch_col, stretch_min
+        self.setColumnWidth(stretch_col, stretch_min)
+        header.sectionResized.connect(self.fit_stretch_column)
 
         save_col = self.columnCount() - 1
-        self.horizontalHeader().setSectionResizeMode(save_col, QHeaderView.ResizeMode.Fixed)
-        self.setColumnWidth(save_col, 60)
+        header.setSectionResizeMode(save_col, QHeaderView.ResizeMode.Fixed)
+        self.setColumnWidth(save_col, 44)
         
         self.verticalHeader().setDefaultSectionSize(36) 
         self.verticalHeader().setVisible(False)
@@ -96,6 +118,21 @@ class LedgerSpreadsheet(QTableWidget):
         self.date_delegate = DateDelegate(self)
         self.setItemDelegateForColumn(1, self.date_delegate)
         self.itemChanged.connect(self.handle_item_changed)
+
+    def fit_stretch_column(self, *args):
+        # 마지막 텍스트 열이 남는 너비를 채우되, 최소 너비 아래로는 줄지 않음 (부족하면 가로 스크롤)
+        header = self.horizontalHeader()
+        used = sum(self.columnWidth(c) for c in range(self.columnCount())
+                   if c != self.stretch_col and not self.isColumnHidden(c))
+        width = max(self.stretch_min, self.viewport().width() - used)
+        if width != self.columnWidth(self.stretch_col):
+            header.blockSignals(True)
+            self.setColumnWidth(self.stretch_col, width)
+            header.blockSignals(False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_stretch_column()
 
     def sort_by_date(self):
         # 같은 날짜끼리는 기존 순서(입력 순서)를 유지하는 안정 정렬
@@ -215,15 +252,21 @@ class LedgerTab(QWidget):
         self.summary_label.setObjectName("SummaryLabel")
         layout.addWidget(self.summary_label)
 
-        content_layout = QHBoxLayout()
+        # 지출/소득 표 사이 경계를 끌어서 너비 비율을 조절할 수 있음
+        content_layout = QSplitter(Qt.Orientation.Horizontal)
+        content_layout.setChildrenCollapsible(False)
+        content_layout.setHandleWidth(12)
+        content_layout.setStyleSheet("QSplitter::handle { background: transparent; }")
         exp_columns = ["소비날짜", "결제수단", "수단명", "대분류", "항목", "지출금액", "사용처", "코멘트"]
         self.expense_box = self.create_section("💸 소비 내역 (지출)", "지출", exp_columns)
         inc_columns = ["소득날짜", "대분류", "항목", "소득 금액", "소득처"]
         self.income_box = self.create_section("💰 소득 내역 (수입)", "수입", inc_columns)
 
-        content_layout.addWidget(self.expense_box, 3)
-        content_layout.addWidget(self.income_box, 2)
-        layout.addLayout(content_layout)
+        content_layout.addWidget(self.expense_box)
+        content_layout.addWidget(self.income_box)
+        content_layout.setStretchFactor(0, 13)
+        content_layout.setStretchFactor(1, 7)
+        layout.addWidget(content_layout, 1)
 
     def create_section(self, title, etype, columns):
         box = QFrame()
@@ -416,7 +459,9 @@ class LedgerTab(QWidget):
         elif col == 1:
             table.setItem(row, col, DateTableWidgetItem(val or ""))
         elif col == amt_col:
-            table.setItem(row, col, NumericTableWidgetItem(val or "0"))
+            item = NumericTableWidgetItem(val or "0")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(row, col, item)
         else:
             table.setItem(row, col, QTableWidgetItem(val or ""))
 

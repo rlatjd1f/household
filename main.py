@@ -28,6 +28,9 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 APP_ICON_PATH = resource_path(os.path.join("assets", "icon", "app.ico"))
+# Qt 스타일시트의 url()은 슬래시 경로를 사용
+ARROW_UP_PATH = resource_path(os.path.join("assets", "ui", "arrow_up.png")).replace("\\", "/")
+ARROW_DOWN_PATH = resource_path(os.path.join("assets", "ui", "arrow_down.png")).replace("\\", "/")
 LOG_DIR = get_app_data_dir() / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -92,7 +95,16 @@ QComboBox QAbstractItemView {
     margin: 0px;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid #dadce0; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: #f1f3f4; }
-QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #5f6368; width: 0; height: 0; }
+QComboBox::down-arrow { image: url(__ARROW_DOWN__); width: 10px; height: 6px; }
+QSpinBox { padding: 8px 22px 8px 10px; }
+QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: border; width: 18px; border-left: 1px solid #dadce0; background-color: #f1f3f4; }
+QSpinBox::up-button { subcontrol-position: top right; border-top-right-radius: 6px; }
+QSpinBox::down-button { subcontrol-position: bottom right; border-bottom-right-radius: 6px; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: #e8f0fe; }
+QSpinBox::up-arrow { image: url(__ARROW_UP__); width: 8px; height: 5px; }
+QSpinBox::down-arrow { image: url(__ARROW_DOWN__); width: 8px; height: 5px; }
+QPushButton#SaveBtn { padding: 0px; }
+QTableWidget QComboBox { padding: 2px 6px; border-radius: 4px; }
 QLineEdit:focus, QSpinBox:focus, QDateEdit:focus, QComboBox:focus { border: 2px solid #1a73e8; }
 QTabWidget::pane { border: 1px solid #dadce0; background: white; }
 QTabBar::tab:selected { color: #1a73e8; border-bottom: 2px solid #1a73e8; }
@@ -118,7 +130,7 @@ QScrollBar::handle:horizontal { background: #c6cbd1; border-radius: 4px; min-wid
 QScrollBar::handle:horizontal:hover { background: #9aa0a6; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
-"""
+""".replace("__ARROW_UP__", ARROW_UP_PATH).replace("__ARROW_DOWN__", ARROW_DOWN_PATH)
 
 
 
@@ -230,9 +242,9 @@ class AppWindow(QMainWindow):
 
         sidebar_container = QWidget(); sidebar_container.setFixedWidth(240); sidebar_layout = QVBoxLayout(sidebar_container); sidebar_layout.setContentsMargins(0, 10, 0, 10); sidebar_layout.setSpacing(5)
         excel_btn_row = QHBoxLayout(); excel_btn_row.setContentsMargins(10, 0, 10, 0)
-        self.import_btn = QPushButton("📂 엑셀 임포트"); self.import_btn.setFlat(True); self.import_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
+        self.import_btn = QPushButton("📂 엑셀 임포트"); self.import_btn.setFlat(True); self.import_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px 2px;")
         self.import_btn.clicked.connect(self.handle_excel_import)
-        self.export_btn = QPushButton("📤 엑셀 내보내기"); self.export_btn.setFlat(True); self.export_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px;")
+        self.export_btn = QPushButton("📤 엑셀 내보내기"); self.export_btn.setFlat(True); self.export_btn.setStyleSheet("font-size: 13px; font-weight: bold; padding: 10px 2px;")
         self.export_btn.clicked.connect(self.handle_excel_export)
         excel_btn_row.addWidget(self.import_btn); excel_btn_row.addWidget(self.export_btn); sidebar_layout.addLayout(excel_btn_row)
 
@@ -246,8 +258,8 @@ class AppWindow(QMainWindow):
         self.year_spin.valueChanged.connect(self.handle_year_change)
         year_row.addWidget(year_label); year_row.addStretch(); year_row.addWidget(self.year_spin); sidebar_layout.addLayout(year_row)
 
-        self.sidebar = QListWidget(); sidebar_layout.addWidget(self.sidebar); main_layout.addWidget(sidebar_container)
-        sidebar_layout.addStretch()
+        # 메뉴 목록이 남는 높이를 모두 사용해 1~12월이 스크롤 없이 보이도록 함
+        self.sidebar = QListWidget(); sidebar_layout.addWidget(self.sidebar, 1); main_layout.addWidget(sidebar_container)
         self.version_label = QLabel(f"v{APP_VERSION}")
         self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.version_label.setStyleSheet("color: #9aa0a6; font-size: 12px; font-weight: 500; padding: 6px 0;")
