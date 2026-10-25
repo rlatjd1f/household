@@ -426,22 +426,6 @@ class AppWindow(QMainWindow):
             file_path += ".xlsx"
         export_to_excel(self.hid, year, file_path, self)
 
-    def setup_pages(self):
-        self.pages = {
-            'settings': SettingsTab(hid=self.hid), 
-            'budget': BudgetTab(hid=self.hid), 
-            'asset': AssetTab(hid=self.hid),
-            'report_monthly': MonthlyReportTab(hid=self.hid),
-            'report_yearly': YearlyReportTab(hid=self.hid)
-        }
-        self.month_pages = {m: LedgerTab(hid=self.hid, month=m) for m in range(1, 13)}
-        self.content_stack.addWidget(self.pages['settings'])       # 0
-        self.content_stack.addWidget(self.pages['budget'])         # 1
-        self.content_stack.addWidget(self.pages['asset'])          # 2
-        self.content_stack.addWidget(self.pages['report_monthly']) # 3
-        self.content_stack.addWidget(self.pages['report_yearly'])  # 4
-        for m in range(1, 13): self.content_stack.addWidget(self.month_pages[m]) # 5-16
-
     def setup_sidebar(self):
         self.sidebar.clear()
         self.sidebar.addItem(QListWidgetItem("⚙️  설정"))           # 0

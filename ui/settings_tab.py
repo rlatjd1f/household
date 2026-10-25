@@ -193,14 +193,13 @@ class CategoryColorDialog(QDialog):
         root_layout.addWidget(button_box)
 
     def apply_theme_style(self):
-        is_dark = self.is_dark_theme()
-        bg = "#202124" if is_dark else "#ffffff"
-        text = "#e8eaed" if is_dark else "#3c4043"
-        muted = "#bdc1c6" if is_dark else "#5f6368"
-        border = "#5f6368" if is_dark else "#dadce0"
-        button_bg = "#8ab4f8" if is_dark else "#1a73e8"
-        button_hover = "#aecbfa" if is_dark else "#1765cc"
-        button_text = "#202124" if is_dark else "#ffffff"
+        bg = "#ffffff"
+        text = "#3c4043"
+        muted = "#5f6368"
+        border = "#dadce0"
+        button_bg = "#1a73e8"
+        button_hover = "#1765cc"
+        button_text = "#ffffff"
         self.preview_border = border
 
         self.setStyleSheet(f"""
@@ -249,14 +248,6 @@ class CategoryColorDialog(QDialog):
                 f"border: 1px solid {border}; border-radius: 3px; padding: 0px; }}"
                 f"QPushButton#PaletteColorButton:hover {{ border: 2px solid {button_bg}; }}"
             )
-
-    def is_dark_theme(self):
-        widget = self.parentWidget()
-        while widget:
-            if hasattr(widget, "is_dark_mode"):
-                return widget.is_dark_mode
-            widget = widget.parentWidget()
-        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
 
     def apply_selected_color(self, color):
         self.selected_color = color
@@ -343,12 +334,9 @@ class CategorySection(QFrame):
         input_layout.addWidget(del_btn)
         layout.addLayout(input_layout)
 
-    def is_dark(self):
-        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
-
     def set_color_button_style(self, button, color):
-        bg = color or ("#3c4043" if self.is_dark() else "#ffffff")
-        border = "#8ab4f8" if color and self.is_dark() else "#1a73e8" if color else "#dadce0"
+        bg = color or "#ffffff"
+        border = "#1a73e8" if color else "#dadce0"
         button.setStyleSheet(
             f"QPushButton {{ background-color: {bg}; border: 1px solid {border}; "
             "border-radius: 8px; min-width: 24px; min-height: 18px; }}"
@@ -427,8 +415,8 @@ class CategorySection(QFrame):
             parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "parent", "name": parent_name})
             parent_item.setFirstColumnSpanned(True)
             parent_item.setSizeHint(0, QSize(0, 34))
-            parent_item.setBackground(0, QColor("#e8f0fe") if not self.is_dark() else QColor("#303f56"))
-            parent_item.setForeground(0, QColor("#174ea6") if not self.is_dark() else QColor("#aecbfa"))
+            parent_item.setBackground(0, QColor("#e8f0fe"))
+            parent_item.setForeground(0, QColor("#174ea6"))
             font = parent_item.font(0)
             font.setBold(True)
             parent_item.setFont(0, font)
@@ -438,7 +426,7 @@ class CategorySection(QFrame):
                 sub_item = QTreeWidgetItem(parent_item, [f"└ {sub[3]}", ""])
                 sub_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "sub", "id": sub[0], "parent": parent_name, "name": sub[3], "color": color})
                 sub_item.setSizeHint(0, QSize(0, 26))
-                sub_item.setForeground(0, QColor("#3c4043") if not self.is_dark() else QColor("#d2d5d9"))
+                sub_item.setForeground(0, QColor("#3c4043"))
                 color_btn = QPushButton()
                 color_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 self.set_color_button_style(color_btn, color)

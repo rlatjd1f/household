@@ -161,9 +161,6 @@ class MonthlyReportTab(QWidget):
         if format_y: ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
         if format_x: ax.xaxis.set_major_formatter(FuncFormatter(comma_formatter))
 
-    def is_dark(self):
-        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
-
     def load_data(self):
         if self.hid is None: return
         cat_stats = sorted(get_monthly_category_stats(self.hid, self.year, self.month), key=lambda x: x[1], reverse=True)
@@ -233,7 +230,7 @@ class MonthlyReportTab(QWidget):
         self.generate_insights(total_exp, total_var, top_10, daily_trends)
 
     def generate_insights(self, total, var, top_10, trends):
-        text_color = "#e8eaed" if self.is_dark() else "#3c4043"
+        text_color = "#3c4043"
         html = f"<div style='line-height:160%; font-size:14px; color:{text_color};'>"
         if not top_10:
             html += "<p>데이터가 부족하여 분석을 진행할 수 없습니다.</p>"
@@ -341,9 +338,6 @@ class YearlyReportTab(QWidget):
         if format_y: ax.yaxis.set_major_formatter(FuncFormatter(comma_formatter))
         if format_x: ax.xaxis.set_major_formatter(FuncFormatter(comma_formatter))
 
-    def is_dark(self):
-        return "background-color: #202124" in (QApplication.instance().styleSheet() or "")
-
     def load_data(self):
         if self.hid is None: return
         trends = get_yearly_monthly_trends(self.hid, self.year)
@@ -409,7 +403,7 @@ class YearlyReportTab(QWidget):
         self.update_yearly_insights(months, inc_data, exp_data, net_data, top_categories)
 
     def update_yearly_insights(self, months, inc_data, exp_data, net_data, top_categories):
-        text_color = "#e8eaed" if "background-color: #202124" in (QApplication.instance().styleSheet() or "") else "#3c4043"
+        text_color = "#3c4043"
         expense_peak = max(zip(months, exp_data), key=lambda item: item[1])
         income_peak = max(zip(months, inc_data), key=lambda item: item[1])
         deficit_months = [f"{int(month)}월" for month, net in zip(months, net_data) if net < 0]
