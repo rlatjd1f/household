@@ -55,10 +55,27 @@ class MonthlyReportTab(QWidget):
         super().__init__()
         self.hid = hid
         self.year = datetime.datetime.now().year
-        self.month = datetime.datetime.now().month
+        self.month = self.default_month()
         self.month_buttons = []
         self.init_ui()
         self.load_data()
+
+    def default_month(self):
+        """올해는 이번 달(내역이 없으면 이번 달 이전의 마지막 입력 월), 다른 연도는 마지막 입력 월."""
+        today = datetime.date.today()
+        if self.hid is None: return today.month
+        trends = get_yearly_monthly_trends(self.hid, self.year)
+        months = [int(m) for m, v in trends.items() if v.get("수입") or v.get("지출")]
+        if self.year == today.year:
+            past = [m for m in months if m <= today.month]
+            return today.month if today.month in months or not past else max(past)
+        return max(months) if months else 1
+
+    def set_year(self, year, refresh=True):
+        self.year = year
+        self.month = self.default_month()
+        self.update_month_buttons()
+        if refresh: self.load_data()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -66,7 +83,8 @@ class MonthlyReportTab(QWidget):
         # 12-Month Button Bar
         top_ctrl = QHBoxLayout()
         top_ctrl.setSpacing(8)
-        top_ctrl.addWidget(QLabel("📅 분석 월 선택:"))
+        self.month_label = QLabel(f"📅 {self.year}년 분석 월 선택:")
+        top_ctrl.addWidget(self.month_label)
         
         for m in range(1, 13):
             btn = QPushButton(f"{m}월")
@@ -140,14 +158,17 @@ class MonthlyReportTab(QWidget):
 
     def on_month_btn_clicked(self, selected_month):
         self.month = selected_month
-        # Update button states
+        self.update_month_buttons()
+        self.load_data()
+
+    def update_month_buttons(self):
+        self.month_label.setText(f"📅 {self.year}년 분석 월 선택:")
         for i, btn in enumerate(self.month_buttons):
-            is_active = (i + 1 == selected_month)
+            is_active = (i + 1 == self.month)
             btn.setProperty("active", is_active)
             btn.setChecked(is_active)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-        self.load_data()
 
     def style_axes(self, ax, format_x=True, format_y=True):
         ax.spines['top'].set_visible(False)
@@ -236,7 +257,13 @@ class MonthlyReportTab(QWidget):
             html += "<p>데이터가 부족하여 분석을 진행할 수 없습니다.</p>"
         else:
             max_item = top_10[0]
-            html += f"<p>📍 지출이 가장 컸던 날은 <b>{max_item[1]}</b>이며, <b>{max_item[7]}</b>에서 {max_item[5]:,}원을 지출하셨습니다.</p>"
+            payee = (max_item[7] or "").strip()
+            category = ">".join(c for c in (max_item[9], max_item[10]) if c)
+            # 사용처가 없으면 분류로, 분류도 없으면 날짜와 금액만 표시
+            if payee: where = f"<b>{payee}</b>에서 쓴 "
+            elif category: where = f"<b>{category}</b> 항목 "
+            else: where = ""
+            html += f"<p>📍 가장 큰 지출은 <b>{max_item[1]}</b>, {where}{max_item[5]:,}원입니다.</p>"
             if trends:
                 peak_day = sorted(trends, key=lambda x: x[1], reverse=True)[0]
                 html += f"<p>📅 {self.month}월 {peak_day[0]}일에 지출 피크가 발생했습니다. 해당 일의 소비 내역을 점검해 보세요.</p>"
@@ -251,6 +278,10 @@ class YearlyReportTab(QWidget):
         super().__init__()
         self.hid = hid; self.year = datetime.datetime.now().year
         self.init_ui(); self.load_data()
+
+    def set_year(self, year, refresh=True):
+        self.year = year
+        if refresh: self.load_data()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -327,9 +358,11 @@ class YearlyReportTab(QWidget):
         layout.addWidget(sub_label)
         return {"frame": frame, "value": value_label, "sub": sub_label}
 
-    def update_kpi_card(self, key, value, sub_text=""):
+    def update_kpi_card(self, key, value, sub_text="", color=None):
         self.kpi_cards[key]["value"].setText(value)
         self.kpi_cards[key]["sub"].setText(sub_text)
+        if color:
+            self.kpi_cards[key]["value"].setStyleSheet(f"font-size: 22px; font-weight: bold; color: {color};")
 
     def style_axes(self, ax, format_x=False, format_y=True):
         ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
@@ -348,13 +381,17 @@ class YearlyReportTab(QWidget):
         total_income = sum(inc_data)
         total_expense = sum(exp_data)
         total_net = total_income - total_expense
-        avg_expense = total_expense // 12
         active_months = sum(1 for inc, exp in zip(inc_data, exp_data) if inc or exp)
+        # 평균 월지출은 지출이 입력된 달만 기준으로 계산 (입력하지 않은 달을 0원으로 섞지 않음)
+        expense_months = sum(1 for exp in exp_data if exp)
+        avg_expense = total_expense // expense_months if expense_months else 0
+        savings_rate = f"저축률 {total_net / total_income * 100:.1f}%" if total_income else "수입 내역 없음"
 
         self.update_kpi_card("income", f"{total_income:,}원", f"입력 월 {active_months}개월")
         self.update_kpi_card("expense", f"{total_expense:,}원", f"월평균 {avg_expense:,}원")
-        self.update_kpi_card("net", f"{total_net:,}원", f"저축률 {(total_net / total_income * 100) if total_income else 0:.1f}%")
-        self.update_kpi_card("avg_expense", f"{avg_expense:,}원", "12개월 기준")
+        self.update_kpi_card("net", f"{total_net:,}원", savings_rate,
+                             color="#188038" if total_net >= 0 else "#d93025")
+        self.update_kpi_card("avg_expense", f"{avg_expense:,}원", f"지출 입력 {expense_months}개월 기준")
 
         self.trend_canvas.figure.clear()
         ax = self.trend_canvas.figure.add_subplot(111)
@@ -408,11 +445,14 @@ class YearlyReportTab(QWidget):
         income_peak = max(zip(months, inc_data), key=lambda item: item[1])
         deficit_months = [f"{int(month)}월" for month, net in zip(months, net_data) if net < 0]
         top_category_text = f"{top_categories[0][0]} {top_categories[0][1]:,}원" if top_categories else "데이터 없음"
+        # 금액이 0이면 '1월 (0원)' 대신 내역 없음으로 표시
+        expense_peak_text = f"{int(expense_peak[0])}월 ({expense_peak[1]:,}원)" if expense_peak[1] else "지출 내역 없음"
+        income_peak_text = f"{int(income_peak[0])}월 ({income_peak[1]:,}원)" if income_peak[1] else "수입 내역 없음"
 
         html = f"""
         <div style="line-height:165%; font-size:14px; color:{text_color};">
-            <p><b>가장 지출이 큰 달</b>: {int(expense_peak[0])}월 ({expense_peak[1]:,}원)</p>
-            <p><b>가장 수입이 큰 달</b>: {int(income_peak[0])}월 ({income_peak[1]:,}원)</p>
+            <p><b>가장 지출이 큰 달</b>: {expense_peak_text}</p>
+            <p><b>가장 수입이 큰 달</b>: {income_peak_text}</p>
             <p><b>최대 지출 분류</b>: {top_category_text}</p>
             <p><b>적자 월</b>: {', '.join(deficit_months) if deficit_months else '없음'}</p>
         </div>

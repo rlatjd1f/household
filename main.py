@@ -253,7 +253,7 @@ class AppWindow(QMainWindow):
         back_btn_row.addWidget(self.back_btn); sidebar_layout.addLayout(back_btn_row)
 
         year_row = QHBoxLayout(); year_row.setContentsMargins(20, 5, 20, 0)
-        year_label = QLabel("📅 가계부 연도"); year_label.setStyleSheet("font-size: 13px; font-weight: bold;")
+        year_label = QLabel("📅 연도"); year_label.setStyleSheet("font-size: 13px; font-weight: bold;")
         self.year_spin = QSpinBox(); self.year_spin.setRange(2000, 2100); self.year_spin.setValue(QDate.currentDate().year()); self.year_spin.setFixedWidth(90)
         self.year_spin.valueChanged.connect(self.handle_year_change)
         year_row.addWidget(year_label); year_row.addStretch(); year_row.addWidget(self.year_spin); sidebar_layout.addLayout(year_row)
@@ -402,8 +402,11 @@ class AppWindow(QMainWindow):
             self.year_spin.setValue(self.month_pages[1].year)
             self.year_spin.blockSignals(False)
             return
-        # 보이지 않는 월 페이지는 이동할 때 handle_navigation에서 새로 불러옴
+        # 보이지 않는 페이지는 이동할 때 handle_navigation에서 새로 불러옴
         for widget in self.month_pages.values():
+            widget.set_year(year, refresh=widget is current)
+        for key in ("report_monthly", "report_yearly"):
+            widget = self.pages[key]
             widget.set_year(year, refresh=widget is current)
 
     def handle_excel_import(self):
