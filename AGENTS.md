@@ -21,6 +21,8 @@
 - If only following the minimal GEMINI.md setup, install PyQt6 with `pip install PyQt6`.
 - Run the application with `python main.py`.
 - For a quick syntax check, run `python -m py_compile main.py ui/*.py`.
+- Run tests with `python -m unittest discover tests` (uses a temporary DB via `HOUSEHOLD_DB_PATH`).
+- Set `HOUSEHOLD_DB_DEBUG=1` to print executed SQL queries.
 - In this Codex environment, the bundled Python may be available at `C:\Users\rlatj\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`.
 
 ## Development Conventions
@@ -33,9 +35,8 @@
 - Preserve Korean UI text and existing emoji labels unless the task asks to change them.
 
 ## UI Notes
-- Global app styles are defined in `main.py` as `COMMON_STYLE`, `LIGHT_STYLE`, and `DARK_STYLE`.
-- Theme-aware widgets should rely on the global stylesheet where possible.
-- If code must branch by theme, follow the existing `QApplication.instance().styleSheet()` pattern.
+- Global app styles are defined in `main.py` as `COMMON_STYLE` and `LIGHT_STYLE`; the app uses a single light theme (theme switching was removed).
+- Widgets should rely on the global stylesheet where possible; do not add dark-theme branches.
 - Report charts are centralized in `ui/report_tab.py`; keep chart font sizes consistent through the existing chart constants.
 
 ## Data And Generated Files

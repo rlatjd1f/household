@@ -27,8 +27,8 @@
 * **계층형 분류 관리**: 대분류와 중분류를 트리(Tree) 구조로 관리하여 복잡한 지출 항목을 체계화합니다.
 
 ### 5. 데이터 이관 및 편의 기능
-* **엑셀 임포트/내보내기**: 프로그램 데이터를 `.xlsx` 형식으로 내보내 엑셀에서 관리하고, 같은 파일을 다시 임포트하여 데이터 이관을 이어갈 수 있습니다.
-* **다크/라이트 모드**: 사용자의 환경에 맞는 세련된 테마 전환 기능을 지원합니다.
+* **엑셀 임포트/내보내기**: 연도별 데이터를 `.xlsx` 형식으로 내보내 엑셀에서 관리하고, 같은 파일을 다시 임포트할 수 있습니다. 임포트는 해당 연도의 예산·가계부 내역만 교체하고 분류와 자산은 기존 데이터에 병합합니다.
+* **자동 업데이트**: 배포 실행 파일은 시작 시 GitHub 릴리즈를 확인해 새 버전을 내려받고 재시작합니다.
 * **키보드 단축키**: 엔터 키 추가, 화살표를 이용한 날짜 조절 등 키보드 중심의 빠른 워크플로우를 제공합니다.
 
 ---
@@ -78,20 +78,23 @@ household/
 │   ├── ledger_tab.py    # 월별 상세 내역 (스프레드시트)
 │   ├── report_tab.py    # 데이터 시각화 리포트
 │   └── migration_util.py # 엑셀 임포트/내보내기 유틸리티
-??? household.db         # ??? ?? DB ??(?? ?? ? ??? ??? ??? ??)
+├── updater.py           # GitHub 릴리즈 기반 자동 업데이트
+└── tests/               # 데이터베이스·엑셀 이관 테스트
 ```
+
+테스트 실행: `python -m unittest discover tests`
 
 ---
 
-## ??? ?? ??
+## 💾 데이터 저장 위치
 
-SQLite ??????? ?? ?? ??? ??? OS? ??? ??? ??? ?????.
+SQLite 데이터베이스는 프로젝트 폴더가 아니라 OS별 사용자 데이터 폴더에 저장됩니다.
 
 - Windows: `%LOCALAPPDATA%\HouseholdManager\household.db`
 - macOS: `~/Library/Application Support/HouseholdManager/household.db`
 - Linux: `$XDG_DATA_HOME/HouseholdManager/household.db` ?? `~/.local/share/HouseholdManager/household.db`
 
-?? ???? ??? `household.db`? ?? ? ??? DB? ??? ?? ?? ? ???? ?????.
+이전 버전에서 프로젝트 폴더에 있던 `household.db`는 새 위치에 DB가 없을 때 처음 실행 시 자동으로 복사됩니다.
 
 ---
 
