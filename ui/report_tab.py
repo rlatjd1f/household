@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from database import (get_monthly_category_stats, get_monthly_daily_trends, 
                       get_yearly_monthly_trends, get_detailed_budgets, get_ledger_entries)
+import calendar
 import datetime
 import platform
 
@@ -241,11 +242,13 @@ class MonthlyReportTab(QWidget):
         if daily_trends:
             ax = self.daily_canvas.figure.add_subplot(111)
             self.style_axes(ax, format_x=False, format_y=True)
-            days = [int(r[0]) for r in daily_trends]
-            amts = [r[1] for r in daily_trends]
-            ax.plot(days, amts, color='#1a73e8', marker='o', markersize=4, linewidth=2)
-            ax.fill_between(days, amts, alpha=0.1, color='#1a73e8')
-            ax.set_xticks(range(1, 32, 5))
+            # 지출 없는 날을 선으로 이어 지출이 있었던 것처럼 보이지 않도록 일별 막대로 표시
+            days_in_month = calendar.monthrange(self.year, self.month)[1]
+            by_day = {int(r[0]): r[1] for r in daily_trends}
+            days = list(range(1, days_in_month + 1))
+            ax.bar(days, [by_day.get(d, 0) for d in days], color='#1a73e8', width=0.7, alpha=0.85)
+            ax.set_xlim(0.3, days_in_month + 0.7)
+            ax.set_xticks([1, 5, 10, 15, 20, 25, days_in_month])
         self.daily_canvas.draw()
 
         self.generate_insights(total_exp, total_var, top_10, daily_trends)

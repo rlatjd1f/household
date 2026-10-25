@@ -295,9 +295,11 @@ class CategorySection(QFrame):
         self.tree.setHeaderHidden(True) 
         self.tree.setIndentation(24)
         self.tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
+        # 마지막 열(색상)이 늘어나 이름 열을 좁히지 않도록 이름 열만 늘림
+        self.tree.header().setStretchLastSection(False)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 44)
+        self.tree.setColumnWidth(1, 40)
         self.tree.itemClicked.connect(self.handle_selection_changed)
         
         # Context Menu Policy
@@ -320,26 +322,27 @@ class CategorySection(QFrame):
         self.sub_input.returnPressed.connect(self.handle_add) 
         
         self.add_btn = QPushButton("추가")
-        self.add_btn.setFixedWidth(80)
         self.add_btn.clicked.connect(self.handle_add)
         
         del_btn = QPushButton("삭제")
         del_btn.setObjectName("DeleteBtn")
-        del_btn.setFixedWidth(80)
         del_btn.clicked.connect(self.handle_delete)
 
+        # 입력칸과 버튼을 두 줄로 나눠 좁은 칸에서도 안내 문구가 보이도록 함
         input_layout.addWidget(self.parent_input)
         input_layout.addWidget(self.sub_input)
-        input_layout.addWidget(self.add_btn)
-        input_layout.addWidget(del_btn)
         layout.addLayout(input_layout)
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addWidget(del_btn)
+        layout.addLayout(btn_layout)
 
     def set_color_button_style(self, button, color):
         bg = color or "#ffffff"
         border = "#1a73e8" if color else "#dadce0"
         button.setStyleSheet(
             f"QPushButton {{ background-color: {bg}; border: 1px solid {border}; "
-            "border-radius: 8px; min-width: 24px; min-height: 18px; }}"
+            "border-radius: 8px; min-width: 24px; max-width: 24px; min-height: 18px; padding: 0px; }}"
             "QPushButton:hover { border-width: 2px; }"
         )
         button.setToolTip("중분류 색상 선택")
