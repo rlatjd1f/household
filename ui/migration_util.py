@@ -3,8 +3,7 @@ import re
 from datetime import date, datetime
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from database import (add_category, save_detailed_budget, add_asset, 
-                      add_ledger_entry, clear_household_data, get_db_connection)
+from database import get_export_data, import_household_year
 from PyQt6.QtWidgets import QMessageBox
 
 def to_int(value):
@@ -90,49 +89,6 @@ def _write_headers(sheet, row, headers):
 def _set_column_widths(sheet, widths):
     for col, width in widths.items():
         sheet.column_dimensions[get_column_letter(col)].width = width
-
-def _fetch_export_data(hid, year):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT id, type, parent_category, sub_category
-        FROM categories
-        WHERE household_id = ?
-        ORDER BY type, parent_category, id
-    """, (hid,))
-    categories = cursor.fetchall()
-
-    cursor.execute("""
-        SELECT month, category_name, amount
-        FROM budgets
-        WHERE household_id = ? AND year = ?
-        ORDER BY month, category_name
-    """, (hid, year))
-    budgets = cursor.fetchall()
-
-    cursor.execute("""
-        SELECT asset_name, initial_balance, current_balance
-        FROM assets
-        WHERE household_id = ?
-        ORDER BY id
-    """, (hid,))
-    assets = cursor.fetchall()
-
-    cursor.execute("""
-        SELECT l.date, l.type, l.amount, l.memo, l.payee, l.payment_method,
-               c.parent_category, c.sub_category,
-               p.parent_category AS payment_parent, p.sub_category AS payment_name
-        FROM ledgers l
-        LEFT JOIN categories c ON l.category_id = c.id
-        LEFT JOIN categories p ON l.asset_id = p.id
-        WHERE l.household_id = ? AND l.date LIKE ?
-        ORDER BY l.date ASC, l.id ASC
-    """, (hid, f"{year}-%"))
-    ledgers = cursor.fetchall()
-
-    conn.close()
-    return categories, budgets, assets, ledgers
 
 def _write_settings_sheet(workbook, year, categories):
     sheet = workbook.active
@@ -267,136 +223,148 @@ def _write_month_sheet(workbook, year, month, ledger_rows):
         9: 4, 10: 13, 11: 14, 12: 14, 13: 12, 14: 16, 15: 20
     })
 
+def build_export_workbook(hid, year):
+    categories, budgets, assets, ledgers = get_export_data(hid, year)
+    workbook = openpyxl.Workbook()
+
+    _write_settings_sheet(workbook, year, categories)
+    _write_budget_sheet(workbook, year, categories, budgets)
+    _write_asset_sheet(workbook, assets)
+
+    ledgers_by_month = _group_rows(ledgers, [0])
+    month_rows = {month: [] for month in range(1, 13)}
+    for rows in ledgers_by_month.values():
+        for row in rows:
+            ds = parse_excel_date(row[0], year)
+            if not ds:
+                continue
+            month_rows[int(ds[5:7])].append(row)
+
+    for month in range(1, 13):
+        _write_month_sheet(workbook, year, month, month_rows[month])
+    return workbook
+
 def export_to_excel(hid, year, file_path, parent_widget):
     try:
-        categories, budgets, assets, ledgers = _fetch_export_data(hid, year)
-        workbook = openpyxl.Workbook()
-
-        _write_settings_sheet(workbook, year, categories)
-        _write_budget_sheet(workbook, year, categories, budgets)
-        _write_asset_sheet(workbook, assets)
-
-        ledgers_by_month = _group_rows(ledgers, [0])
-        month_rows = {month: [] for month in range(1, 13)}
-        for rows in ledgers_by_month.values():
-            for row in rows:
-                ds = parse_excel_date(row[0], year)
-                if not ds:
-                    continue
-                month_rows[int(ds[5:7])].append(row)
-
-        for month in range(1, 13):
-            _write_month_sheet(workbook, year, month, month_rows[month])
-
-        workbook.save(file_path)
+        build_export_workbook(hid, year).save(file_path)
         QMessageBox.information(parent_widget, "완료", "엑셀 내보내기가 완료되었습니다.")
         return True
     except Exception as e:
         QMessageBox.critical(parent_widget, "오류", f"엑셀 내보내기 중 오류 발생: {e}")
         return False
 
+def _cell_text(row, index):
+    if index < len(row) and row[index] is not None:
+        return str(row[index]).strip()
+    return ""
+
+def parse_workbook(wb):
+    """Parse an exported workbook without touching the database.
+
+    Returns (year, categories, budgets, assets, ledgers) in the shapes
+    expected by database.import_household_year.
+    """
+    import_year = get_import_year(wb)
+    categories, budgets, assets, ledgers = [], [], [], []
+
+    # 1. Categories
+    if '설정하기' in wb.sheetnames:
+        sheet = wb['설정하기']
+        current_type = "소비"
+        section_titles = ["연도 설정", "소비 분류", "결제분류", "소득 분류", "자본, 부채 분류"]
+        for row in sheet.iter_rows(min_row=1, values_only=True):
+            if not row or not row[0]: continue
+            h = str(row[0]).strip()
+            if "소비 분류" in h: current_type = "소비"
+            elif "소득 분류" in h: current_type = "소득"
+            elif "결제분류" in h: current_type = "결제수단"
+            elif "자본" in h and "부채" in h: current_type = "자본"
+            if h in section_titles or len(row) < 3 or not row[2]: continue
+            for col_idx in range(2, len(row)):
+                sub = _cell_text(row, col_idx)
+                if sub: categories.append((current_type, h, sub))
+
+    # 2. Budget
+    if '예산 설정' in wb.sheetnames:
+        sheet = wb['예산 설정']
+        headers = list(next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+        for row in sheet.iter_rows(min_row=3, values_only=True):
+            ms = _cell_text(row, 1)
+            if "월" not in ms: continue
+            month = to_int(ms.replace("월", ""))
+            if not month or not 1 <= month <= 12: continue
+            for col in range(2, min(len(row), len(headers))):
+                amount = to_int(row[col])
+                name = str(headers[col]).strip() if headers[col] is not None else ""
+                if name and amount:
+                    budgets.append((month, name, amount))
+
+    # 3. Assets
+    if '자산 관리' in wb.sheetnames:
+        sheet = wb['자산 관리']
+        for row in sheet.iter_rows(min_row=1, values_only=True):
+            values = list(row)
+            if "자본금" not in values: continue
+            idx = values.index("자본금")
+            amount = next((to_int(v) for v in values[idx + 1:] if to_int(v) is not None), None)
+            if amount is not None:
+                assets.append(("자본금", amount))
+                break
+
+    # 4. Ledger
+    for month in range(1, 13):
+        sheet_name = f"{month}월"
+        if sheet_name not in wb.sheetnames: continue
+        sheet = wb[sheet_name]
+        header_row, headers = find_header_row(sheet)
+        if not header_row: continue
+        es = headers.index("소비날짜")
+        ins = headers.index("소득날짜")
+
+        for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
+            expense_amount = to_int(row[es + 5] if len(row) > es + 5 else None)
+            if len(row) > es and row[es] and expense_amount:
+                pm, an = _cell_text(row, es + 1), _cell_text(row, es + 2)
+                ledgers.append({
+                    "date": parse_excel_date(row[es], import_year, month), "type": "지출",
+                    "category": ("소비", _cell_text(row, es + 3), _cell_text(row, es + 4)),
+                    "payment": ("결제수단", pm, an), "amount": expense_amount,
+                    "payee": _cell_text(row, es + 6), "memo": _cell_text(row, es + 7), "payment_method": pm,
+                })
+
+            income_amount = to_int(row[ins + 3] if len(row) > ins + 3 else None)
+            if len(row) > ins and row[ins] and income_amount:
+                ledgers.append({
+                    "date": parse_excel_date(row[ins], import_year, month), "type": "수입",
+                    "category": ("소득", _cell_text(row, ins + 1), _cell_text(row, ins + 2)),
+                    "payment": None, "amount": income_amount,
+                    "payee": _cell_text(row, ins + 4), "memo": _cell_text(row, ins + 5), "payment_method": "",
+                })
+
+    return import_year, categories, budgets, assets, ledgers
+
 def import_from_excel(hid, file_path, parent_widget):
+    # 엑셀을 모두 읽은 뒤에 DB를 바꾸므로, 파일 오류가 나도 기존 데이터는 그대로 유지됨
     try:
         wb = openpyxl.load_workbook(file_path, data_only=True)
-        import_year = get_import_year(wb)
-        
-        reply = QMessageBox.question(
-            parent_widget, "데이터 이관 확인",
-            "기존 모든 데이터를 삭제하고 엑셀 데이터를 가져오시겠습니까?\n(가져오기 후 프로그램이 최신 상태로 갱신됩니다.)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.No: return False
-
-        # Clear data for THIS household only
-        clear_household_data(hid)
-
-        # 2. Categories
-        if '설정하기' in wb.sheetnames:
-            sheet = wb['설정하기']
-            current_type = "소비"
-            for row in sheet.iter_rows(min_row=1, values_only=True):
-                if not row[0]: continue
-                h = str(row[0]).strip()
-                if "소비 분류" in h: current_type = "소비"
-                elif "소득 분류" in h: current_type = "소득"
-                elif "결제분류" in h: current_type = "결제수단"
-                elif "자본" in h and "부채" in h: current_type = "자본"
-                if row[2]:
-                    parent = row[0]
-                    if parent in ["연도 설정", "소비 분류", "결제분류", "소득 분류", "자본, 부채 분류"]: continue
-                    for col_idx in range(2, len(row)):
-                        sub = row[col_idx]
-                        if sub: add_category(hid, current_type, parent, sub)
-
-        # 3. Budget
-        if '예산 설정' in wb.sheetnames:
-            sheet = wb['예산 설정']
-            headers = [c for c in next(sheet.iter_rows(min_row=1, max_row=1, values_only=True)) if c]
-            for row in sheet.iter_rows(min_row=3, values_only=True):
-                ms = str(row[1]) if row[1] else ""
-                if "월" in ms:
-                    month = int(ms.replace("월", ""))
-                    for i, amt in enumerate(row[2:]):
-                        if i + 2 < len(headers) and amt:
-                            save_detailed_budget(hid, import_year, month, headers[i+2], int(amt))
-
-        # 4. Assets
-        if '자산 관리' in wb.sheetnames:
-            sheet = wb['자산 관리']
-            for row in sheet.iter_rows(min_row=1, values_only=True):
-                values = list(row)
-                for idx, value in enumerate(values):
-                    if value == "자본금":
-                        for next_value in values[idx + 1:]:
-                            amount = to_int(next_value)
-                            if amount is not None:
-                                add_asset(hid, "자본금", amount)
-                                break
-                        break
-
-        # 5. Ledger
-        cat_map = {}
-        conn = get_db_connection(); cursor = conn.cursor()
-        cursor.execute("SELECT id, type, parent_category, sub_category FROM categories WHERE household_id = ?", (hid,))
-        for r in cursor.fetchall(): cat_map[(r[1], r[2], r[3])] = r[0]
-        conn.close()
-
-        for month in range(1, 13):
-            sheet_name = f"{month}월"
-            if sheet_name in wb.sheetnames:
-                sheet = wb[sheet_name]
-                header_row, headers = find_header_row(sheet)
-                if not header_row:
-                    continue
-                expense_start = headers.index("소비날짜")
-                income_start = headers.index("소득날짜")
-
-                for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
-                    expense_amount = to_int(row[expense_start + 5] if len(row) > expense_start + 5 else None)
-                    if len(row) > expense_start and row[expense_start] and expense_amount:
-                        ds = parse_excel_date(row[expense_start], import_year, month)
-                        pm = str(row[expense_start + 1]).strip() if len(row) > expense_start + 1 and row[expense_start + 1] else ""
-                        an = str(row[expense_start + 2]).strip() if len(row) > expense_start + 2 and row[expense_start + 2] else ""
-                        p = str(row[expense_start + 3]).strip() if len(row) > expense_start + 3 and row[expense_start + 3] else ""
-                        s = str(row[expense_start + 4]).strip() if len(row) > expense_start + 4 and row[expense_start + 4] else ""
-                        payee = str(row[expense_start + 6]).strip() if len(row) > expense_start + 6 and row[expense_start + 6] else ""
-                        memo = str(row[expense_start + 7]).strip() if len(row) > expense_start + 7 and row[expense_start + 7] else ""
-                        cat_id = cat_map.get(("소비", p, s))
-                        asset_id = cat_map.get(("결제수단", pm, an))
-                        add_ledger_entry(hid, ds, "지출", cat_id, asset_id, expense_amount, memo, payee, pm)
-
-                    income_amount = to_int(row[income_start + 3] if len(row) > income_start + 3 else None)
-                    if len(row) > income_start and row[income_start] and income_amount:
-                        ds = parse_excel_date(row[income_start], import_year, month)
-                        p = str(row[income_start + 1]).strip() if len(row) > income_start + 1 and row[income_start + 1] else ""
-                        s = str(row[income_start + 2]).strip() if len(row) > income_start + 2 and row[income_start + 2] else ""
-                        payee = str(row[income_start + 4]).strip() if len(row) > income_start + 4 and row[income_start + 4] else ""
-                        memo = str(row[income_start + 5]).strip() if len(row) > income_start + 5 and row[income_start + 5] else ""
-                        cat_id = cat_map.get(("소득", p, s))
-                        add_ledger_entry(hid, ds, "수입", cat_id, None, income_amount, memo, payee, "")
-
-        QMessageBox.information(parent_widget, "완료", "엑셀 데이터 이관이 성공적으로 완료되었습니다.")
-        return True
+        import_year, categories, budgets, assets, ledgers = parse_workbook(wb)
     except Exception as e:
-        QMessageBox.critical(parent_widget, "오류", f"엑셀 임포트 중 오류 발생: {e}"); return False
+        QMessageBox.critical(parent_widget, "오류", f"엑셀 파일을 읽는 중 오류 발생: {e}")
+        return False
+
+    reply = QMessageBox.question(
+        parent_widget, "데이터 이관 확인",
+        f"{import_year}년 예산과 가계부 내역을 엑셀 데이터로 교체하시겠습니까?\n"
+        "분류와 자산은 기존 데이터에 병합되며, 다른 연도의 데이터는 유지됩니다.\n"
+        f"(가계부 내역 {len(ledgers)}건, 예산 {len(budgets)}건)",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    )
+    if reply != QMessageBox.StandardButton.Yes: return False
+
+    try:
+        import_household_year(hid, import_year, categories, budgets, assets, ledgers)
+    except Exception as e:
+        QMessageBox.critical(parent_widget, "오류", f"엑셀 임포트 중 오류 발생: {e}\n기존 데이터는 변경되지 않았습니다.")
+        return False
+    QMessageBox.information(parent_widget, "완료", "엑셀 데이터 이관이 성공적으로 완료되었습니다.")
+    return True

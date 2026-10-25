@@ -19,15 +19,23 @@ def get_app_data_dir():
 
 
 def get_db_path():
+    # HOUSEHOLD_DB_PATH: 테스트 등에서 별도 DB 파일을 쓰기 위한 경로 지정
+    override = os.environ.get("HOUSEHOLD_DB_PATH")
+    if override:
+        return Path(override)
     return get_app_data_dir() / DB_FILENAME
 
 
 DB_NAME = str(get_db_path())
+DB_DEBUG = bool(os.environ.get("HOUSEHOLD_DB_DEBUG"))
+SCHEMA_VERSION = 1
 
 
 def migrate_legacy_db():
     target_path = get_db_path()
     target_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("HOUSEHOLD_DB_PATH"):
+        return
     if target_path.exists() or not LEGACY_DB_PATH.exists():
         return
     if LEGACY_DB_PATH == target_path:
@@ -163,9 +171,8 @@ def init_db():
             sql_str = table_sql[0].replace(' ', '').replace('\n', '')
             # Robust check for the proper UNIQUE constraint including household_id
             if f"UNIQUE(household_id," not in sql_str:
-                print(f"Repairing {table}: UNIQUE constraint missing household_id. Recreating...")
-                cursor.execute(f"DROP TABLE IF EXISTS {table}")
-                cursor.execute(create_sql)
+                print(f"Repairing {table}: UNIQUE constraint missing household_id. Rebuilding...")
+                rebuild_table(cursor, table, create_sql, default_hid)
                 conn.commit()
 
     # Ledgers migration (Individual columns)
@@ -181,16 +188,50 @@ def init_db():
         cursor.execute(f"UPDATE ledgers SET household_id = ?", (default_hid,))
     if "payee" not in l_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payee TEXT")
     if "payment_method" not in l_cols: cursor.execute("ALTER TABLE ledgers ADD COLUMN payment_method TEXT")
-    
+
     conn.commit()
+    apply_data_migrations(conn)
     conn.close()
     print(f"Database {DB_NAME} initialized correctly.")
+
+def rebuild_table(cursor, table, create_sql, default_hid):
+    """Recreate a table with the current schema while keeping its rows."""
+    temp_table = f"{table}_rebuild"
+    cursor.execute(f"DROP TABLE IF EXISTS {temp_table}")
+    cursor.execute(create_sql.replace(f"CREATE TABLE {table}", f"CREATE TABLE {temp_table}", 1))
+    cursor.execute(f"PRAGMA table_info({table})")
+    old_cols = {row[1] for row in cursor.fetchall()}
+    cursor.execute(f"PRAGMA table_info({temp_table})")
+    new_cols = [row[1] for row in cursor.fetchall()]
+    select_exprs = []
+    for col in new_cols:
+        if col in old_cols: select_exprs.append(col)
+        elif col == "household_id": select_exprs.append(str(int(default_hid)))
+        else: select_exprs.append("NULL")
+    cursor.execute(f"INSERT OR IGNORE INTO {temp_table} ({', '.join(new_cols)}) SELECT {', '.join(select_exprs)} FROM {table}")
+    cursor.execute(f"DROP TABLE {table}")
+    cursor.execute(f"ALTER TABLE {temp_table} RENAME TO {table}")
+
+def apply_data_migrations(conn):
+    cursor = conn.cursor()
+    version = cursor.execute("PRAGMA user_version").fetchone()[0]
+    if version < 1:
+        # 가계부 내역의 asset_id는 결제수단 분류(categories.id)를 가리키는데,
+        # 이전 버전은 같은 id로 assets 잔액을 갱신해 엉뚱한 자산 잔액이 바뀌었음.
+        cursor.execute("UPDATE assets SET current_balance = initial_balance")
+        # 외래키가 꺼져 있어 가계부 삭제 시 남은 데이터 정리
+        for table in ("categories", "budgets", "assets", "ledgers"):
+            cursor.execute(f"DELETE FROM {table} WHERE household_id IS NULL OR household_id NOT IN (SELECT id FROM households)")
+    if version < SCHEMA_VERSION:
+        cursor.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    conn.commit()
 
 def get_db_connection():
     get_db_path().parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_NAME)
 
 def log_query(query, params=None):
+    if not DB_DEBUG: return
     print(f"\n[DB LOG] {query.strip()}")
     if params: print(f"        {params}")
 
@@ -216,11 +257,18 @@ def get_households():
     return rows
 
 def delete_household(hid):
+    # foreign_keys가 꺼져 있어 ON DELETE CASCADE가 동작하지 않으므로 직접 삭제
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM households WHERE id = ?", (hid,))
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            _delete_household_rows(conn.cursor(), hid)
+            conn.execute("DELETE FROM households WHERE id = ?", (hid,))
+    finally:
+        conn.close()
+
+def _delete_household_rows(cursor, hid):
+    for table in ("ledgers", "budgets", "assets", "categories"):
+        cursor.execute(f"DELETE FROM {table} WHERE household_id = ?", (hid,))
 
 def update_household_name(hid, new_name):
     conn = get_db_connection()
@@ -358,10 +406,6 @@ def add_ledger_entry(hid, date, entry_type, category_id, asset_id, amount, memo,
         params = (hid, date, entry_type, category_id, asset_id, amount, memo, payee, payment_method)
         log_query(query, params)
         cursor.execute(query, params)
-        if entry_type == "수입":
-            cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (amount, asset_id))
-        elif entry_type == "지출":
-            cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (amount, asset_id))
         conn.commit()
         return cursor.lastrowid
     except Exception as e:
@@ -374,20 +418,10 @@ def update_ledger_entry(entry_id, date, entry_type, category_id, asset_id, amoun
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT type, amount, asset_id FROM ledgers WHERE id = ?", (entry_id,))
-        old = cursor.fetchone()
-        if old:
-            ot, oa, oaid = old
-            if ot == "수입": cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (oa, oaid))
-            elif ot == "지출": cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (oa, oaid))
-
         query = "UPDATE ledgers SET date=?, type=?, category_id=?, asset_id=?, amount=?, memo=?, payee=?, payment_method=? WHERE id=?"
         params = (date, entry_type, category_id, asset_id, amount, memo, payee, payment_method, entry_id)
         log_query(query, params)
         cursor.execute(query, params)
-
-        if entry_type == "수입": cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (amount, asset_id))
-        elif entry_type == "지출": cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (amount, asset_id))
         conn.commit()
         return True
     except Exception as e:
@@ -419,16 +453,10 @@ def get_ledger_entries(hid, year, month):
 def delete_ledger_entry(entry_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT type, amount, asset_id FROM ledgers WHERE id = ?", (entry_id,))
-    entry = cursor.fetchone()
-    if entry:
-        et, am, aid = entry
-        if et == "수입": cursor.execute("UPDATE assets SET current_balance = current_balance - ? WHERE id = ?", (am, aid))
-        elif et == "지출": cursor.execute("UPDATE assets SET current_balance = current_balance + ? WHERE id = ?", (am, aid))
-        query = "DELETE FROM ledgers WHERE id = ?"
-        log_query(query, (entry_id,))
-        cursor.execute(query, (entry_id,))
-        conn.commit()
+    query = "DELETE FROM ledgers WHERE id = ?"
+    log_query(query, (entry_id,))
+    cursor.execute(query, (entry_id,))
+    conn.commit()
     conn.close()
 
 def get_detailed_budgets(hid, year):
@@ -456,16 +484,109 @@ def save_detailed_budget(hid, year, month, category_name, amount):
     conn.commit()
     conn.close()
 
+def save_detailed_budgets(hid, year, rows):
+    """rows: [(month, category_name, amount)] - 한 트랜잭션으로 저장"""
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT INTO budgets (household_id, year, month, category_name, amount) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(household_id, year, month, category_name) DO UPDATE SET amount = excluded.amount",
+                [(hid, year, m, c, a) for m, c, a in rows]
+            )
+    finally:
+        conn.close()
+
 def clear_household_data(hid):
     """Wipes all data for a specific household."""
     conn = get_db_connection()
+    try:
+        with conn:
+            _delete_household_rows(conn.cursor(), hid)
+    finally:
+        conn.close()
+
+# --- Excel Migration Functions ---
+def get_export_data(hid, year):
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM categories WHERE household_id = ?", (hid,))
-    cursor.execute("DELETE FROM budgets WHERE household_id = ?", (hid,))
-    cursor.execute("DELETE FROM assets WHERE household_id = ?", (hid,))
-    cursor.execute("DELETE FROM ledgers WHERE household_id = ?", (hid,))
-    conn.commit()
+    cursor.execute("""
+        SELECT id, type, parent_category, sub_category
+        FROM categories
+        WHERE household_id = ?
+        ORDER BY type, parent_category, id
+    """, (hid,))
+    categories = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT month, category_name, amount
+        FROM budgets
+        WHERE household_id = ? AND year = ?
+        ORDER BY month, category_name
+    """, (hid, year))
+    budgets = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT asset_name, initial_balance, current_balance
+        FROM assets
+        WHERE household_id = ?
+        ORDER BY id
+    """, (hid,))
+    assets = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT l.date, l.type, l.amount, l.memo, l.payee, l.payment_method,
+               c.parent_category, c.sub_category,
+               p.parent_category AS payment_parent, p.sub_category AS payment_name
+        FROM ledgers l
+        LEFT JOIN categories c ON l.category_id = c.id
+        LEFT JOIN categories p ON l.asset_id = p.id
+        WHERE l.household_id = ? AND l.date LIKE ?
+        ORDER BY l.date ASC, l.id ASC
+    """, (hid, f"{year}-%"))
+    ledgers = cursor.fetchall()
     conn.close()
+    return categories, budgets, assets, ledgers
+
+def import_household_year(hid, year, categories, budgets, assets, ledgers):
+    """Apply parsed Excel data in one transaction.
+
+    categories: [(type, parent, sub)] - 기존 분류에 병합 (id 유지)
+    budgets: [(month, category_name, amount)] - 해당 연도 예산 교체
+    assets: [(asset_name, initial_balance)] - 같은 이름이면 금액 갱신
+    ledgers: [dict(date, type, category, payment, amount, memo, payee, payment_method)]
+        - 해당 연도 내역 교체. category/payment는 (type, parent, sub) 키
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "INSERT OR IGNORE INTO categories (household_id, type, parent_category, sub_category, color) VALUES (?, ?, ?, ?, NULL)",
+                [(hid, t, p, s) for t, p, s in categories]
+            )
+            cursor.executemany(
+                "INSERT INTO assets (household_id, asset_name, initial_balance, current_balance) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(household_id, asset_name) DO UPDATE SET initial_balance = excluded.initial_balance, current_balance = excluded.current_balance",
+                [(hid, name, amount, amount) for name, amount in assets]
+            )
+            cursor.execute("DELETE FROM budgets WHERE household_id = ? AND year = ?", (hid, year))
+            cursor.executemany(
+                "INSERT INTO budgets (household_id, year, month, category_name, amount) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(household_id, year, month, category_name) DO UPDATE SET amount = excluded.amount",
+                [(hid, year, m, c, a) for m, c, a in budgets]
+            )
+
+            cursor.execute("SELECT id, type, parent_category, sub_category FROM categories WHERE household_id = ?", (hid,))
+            cat_map = {(t, p, s): cid for cid, t, p, s in cursor.fetchall()}
+            cursor.execute("DELETE FROM ledgers WHERE household_id = ? AND date LIKE ?", (hid, f"{year}-%"))
+            cursor.executemany(
+                "INSERT INTO ledgers (household_id, date, type, category_id, asset_id, amount, memo, payee, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(hid, e["date"], e["type"], cat_map.get(e["category"]), cat_map.get(e["payment"]) if e.get("payment") else None,
+                  e["amount"], e["memo"], e["payee"], e["payment_method"]) for e in ledgers]
+            )
+    finally:
+        conn.close()
 
 # --- Report Aggregation Functions ---
 def get_monthly_category_stats(hid, year, month):
