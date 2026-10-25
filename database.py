@@ -527,7 +527,7 @@ def get_export_data(hid, year):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, type, parent_category, sub_category
+        SELECT id, type, parent_category, sub_category, color
         FROM categories
         WHERE household_id = ?
         ORDER BY type, parent_category, id
@@ -567,7 +567,8 @@ def get_export_data(hid, year):
 def import_household_year(hid, year, categories, budgets, assets, ledgers):
     """Apply parsed Excel data in one transaction.
 
-    categories: [(type, parent, sub)] - 기존 분류에 병합 (id 유지)
+    categories: [(type, parent, sub)] 또는 [(type, parent, sub, color)] - 기존 분류에 병합 (id 유지).
+        color가 있으면 그 색으로 바꾸고, 없으면 기존 색을 유지
     budgets: [(month, category_name, amount)] - 해당 연도 예산 교체
     assets: [(asset_name, initial_balance)] - 같은 이름이면 금액 갱신
     ledgers: [dict(date, type, category, payment, amount, memo, payee, payment_method)]
@@ -579,7 +580,11 @@ def import_household_year(hid, year, categories, budgets, assets, ledgers):
             cursor = conn.cursor()
             cursor.executemany(
                 "INSERT OR IGNORE INTO categories (household_id, type, parent_category, sub_category, color) VALUES (?, ?, ?, ?, NULL)",
-                [(hid, t, p, s) for t, p, s in categories]
+                [(hid, c[0], c[1], c[2]) for c in categories]
+            )
+            cursor.executemany(
+                "UPDATE categories SET color = ? WHERE household_id = ? AND type = ? AND parent_category = ? AND sub_category = ?",
+                [(c[3], hid, c[0], c[1], c[2]) for c in categories if len(c) > 3 and c[3]]
             )
             cursor.executemany(
                 "INSERT INTO assets (household_id, asset_name, initial_balance, current_balance) VALUES (?, ?, ?, ?) "

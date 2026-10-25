@@ -118,10 +118,15 @@ class CategoryColorDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.selected_color = initial_color if initial_color and initial_color.isValid() else QColor("#e8f0fe")
         self.preview_border = "#dadce0"
+        self.no_color = False
         self.palette_buttons = []
         self.init_ui()
         self.apply_theme_style()
         self.apply_selected_color(self.selected_color)
+
+    def select_no_color(self):
+        self.no_color = True
+        self.accept()
 
     def build_emoji_icon(self, emoji):
         pixmap = QPixmap(32, 32)
@@ -188,6 +193,9 @@ class CategoryColorDialog(QDialog):
         button_box.setObjectName("ColorDialogButtons")
         button_box.button(QDialogButtonBox.StandardButton.Ok).setText("확인")
         button_box.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
+        # 지정한 색을 지우고 기본(색 없음) 상태로 되돌림
+        no_color_btn = button_box.addButton("색 없음", QDialogButtonBox.ButtonRole.ResetRole)
+        no_color_btn.clicked.connect(self.select_no_color)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         root_layout.addWidget(button_box)
@@ -352,8 +360,7 @@ class CategorySection(QFrame):
         dialog = CategoryColorDialog(initial, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        color = dialog.selected_color
-        update_category_color(category_id, color.name())
+        update_category_color(category_id, None if dialog.no_color else dialog.selected_color.name())
         self.load_data()
 
     def show_context_menu(self, position: QPoint):

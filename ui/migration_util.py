@@ -63,6 +63,22 @@ def find_header_row(sheet):
             return row_idx, values
     return None, []
 
+def _color_to_fill_hex(color):
+    """'#a1b2c3' -> 'A1B2C3' (openpyxl 채우기 색), 형식이 다르면 None"""
+    if color and re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        return color[1:].upper()
+    return None
+
+def _fill_to_color(cell):
+    """셀 배경색(단색 채우기)을 '#rrggbb'로 읽음. 채우기가 없거나 테마 색이면 None"""
+    fill = cell.fill
+    if fill is None or fill.fill_type != "solid":
+        return None
+    rgb = fill.fgColor.rgb if fill.fgColor is not None else None
+    if isinstance(rgb, str) and re.fullmatch(r"[0-9A-Fa-f]{8}", rgb):
+        return "#" + rgb[2:].lower()
+    return None
+
 def _group_rows(rows, key_indexes):
     grouped = {}
     for row in rows:
@@ -105,8 +121,10 @@ def _write_settings_sheet(workbook, year, categories):
         "자본": "자본, 부채 분류",
     }
     grouped = {}
-    for _, category_type, parent, sub in categories:
+    colors = {}
+    for _, category_type, parent, sub, color in categories:
         grouped.setdefault(category_type, {}).setdefault(parent, []).append(sub)
+        if color: colors[(category_type, parent, sub)] = color
 
     row = 4
     for category_type in type_order:
@@ -122,7 +140,11 @@ def _write_settings_sheet(workbook, year, categories):
             sheet.cell(row, 1, parent)
             sheet.cell(row, 2, ",".join(unique_subs))
             for col, sub in enumerate(unique_subs, start=3):
-                sheet.cell(row, col, sub)
+                cell = sheet.cell(row, col, sub)
+                # 분류 색상은 셀 배경색으로 저장하고, 임포트 시 다시 읽음
+                fill_hex = _color_to_fill_hex(colors.get((category_type, parent, sub)))
+                if fill_hex:
+                    cell.fill = PatternFill("solid", fgColor=fill_hex)
             row += 1
         row += 1
 
@@ -131,7 +153,7 @@ def _write_settings_sheet(workbook, year, categories):
 def _write_budget_sheet(workbook, year, categories, budgets):
     sheet = workbook.create_sheet("예산 설정")
     expense_parents = []
-    for _, category_type, parent, _ in categories:
+    for _, category_type, parent, _, _ in categories:
         if category_type == "소비" and parent not in expense_parents:
             expense_parents.append(parent)
     for _, category_name, _ in budgets:
@@ -272,7 +294,8 @@ def parse_workbook(wb):
         sheet = wb['설정하기']
         current_type = "소비"
         section_titles = ["연도 설정", "소비 분류", "결제분류", "소득 분류", "자본, 부채 분류"]
-        for row in sheet.iter_rows(min_row=1, values_only=True):
+        for cells in sheet.iter_rows(min_row=1):
+            row = tuple(c.value for c in cells)
             if not row or not row[0]: continue
             h = str(row[0]).strip()
             if "소비 분류" in h: current_type = "소비"
@@ -282,7 +305,7 @@ def parse_workbook(wb):
             if h in section_titles or len(row) < 3 or not row[2]: continue
             for col_idx in range(2, len(row)):
                 sub = _cell_text(row, col_idx)
-                if sub: categories.append((current_type, h, sub))
+                if sub: categories.append((current_type, h, sub, _fill_to_color(cells[col_idx])))
 
     # 2. Budget
     if '예산 설정' in wb.sheetnames:
