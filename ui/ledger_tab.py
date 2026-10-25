@@ -214,6 +214,8 @@ class LedgerSpreadsheet(QTableWidget):
             if not date:
                 QMessageBox.warning(self, "저장 실패", "날짜를 입력해 주세요.")
                 return False
+            if not self.confirm_row_save(date, parent, sub, cat_id, pay_method, asset_name, asset_id):
+                return False
             if entry_id:
                 saved = update_ledger_entry(entry_id, date, self.entry_type, cat_id, asset_id, amount, memo, payee, pay_method)
             else:
@@ -226,6 +228,12 @@ class LedgerSpreadsheet(QTableWidget):
             if not saved:
                 QMessageBox.warning(self, "저장 실패", "내역을 저장하지 못했습니다.")
                 return False
+
+            if not self.ledger_tab.is_in_this_month(date):
+                # 다른 달로 저장된 내역은 해당 월 가계부에서 보이므로 이 표에서 제거
+                self.removeRow(row)
+                self.ledger_tab.refresh_summary()
+                return True
 
             self.blockSignals(True)
             date_item = self.item(row, 1)
@@ -240,6 +248,24 @@ class LedgerSpreadsheet(QTableWidget):
         except Exception as e:
             QMessageBox.critical(self, "저장 실패", f"저장 중 오류 발생: {e}")
             return False
+
+    def confirm_row_save(self, date, parent, sub, cat_id, pay_method, asset_name, asset_id):
+        """분류가 없거나 다른 달 날짜인 경우 저장 전에 확인"""
+        notes = []
+        if cat_id is None:
+            if parent or sub:
+                notes.append(f"'{parent} > {sub}' 분류가 설정에 없어 분류 없이 저장됩니다.")
+            else:
+                notes.append("대분류/항목이 비어 있어 분류 없이 저장됩니다. (리포트 분류별 통계에서 빠집니다)")
+        if self.entry_type == "지출" and (pay_method or asset_name) and asset_id is None:
+            notes.append(f"'{pay_method} > {asset_name}' 결제수단이 설정에 없습니다.")
+        if not self.ledger_tab.is_in_this_month(date):
+            notes.append(f"날짜가 {date[:4]}년 {int(date[5:7])}월이라 저장하면 해당 월 가계부로 이동합니다.")
+        if not notes:
+            return True
+        message = f"{date} 내역\n\n" + "\n".join(f"• {note}" for note in notes) + "\n\n그대로 저장할까요?"
+        reply = QMessageBox.question(self, "저장 확인", message, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return reply == QMessageBox.StandardButton.Yes
 
     def unsaved_rows(self):
         save_col = self.columnCount() - 1
@@ -334,6 +360,9 @@ class LedgerTab(QWidget):
         save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
         save_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         save_shortcut.activated.connect(self.save_all)
+
+    def is_in_this_month(self, date):
+        return date.startswith(f"{self.year}-{self.month:02d}-")
 
     def save_all(self, tables=None):
         saved = failed = 0
@@ -643,20 +672,24 @@ class LedgerTab(QWidget):
         monthly_total_budget = 0
         for cat_data in budget_data.values():
             monthly_total_budget += cat_data.get(self.month, 0)
-        def sum_table(table, col):
-            total = 0
-            for r in range(table.rowCount()):
-                if not table.isRowHidden(r):
-                    total += table.get_int(r, col)
-            return total
+        def sum_table(table, col, visible_only=False):
+            return sum(table.get_int(r, col) for r in range(table.rowCount())
+                       if not (visible_only and table.isRowHidden(r)))
+        # 예산 비교는 검색 필터와 관계없이 이번 달 전체 내역 기준
         exp = sum_table(self.expense_table, 6)
+        income = sum_table(self.income_table, 4)
         remaining = monthly_total_budget - exp
         # 예산 초과: 빨간색, 초과하지 않음: 초록색
         status_color = BUDGET_OVER_COLOR if remaining < 0 else BUDGET_OK_COLOR
-        self.summary_label.setText(
+        text = (
+            f"<span style='color:#1a73e8;'>{self.year}년 {self.month}월</span> | "
             f"월 예산: {monthly_total_budget:,} | 지출: <span style='color:{status_color};'>{exp:,}</span> | "
-            f"남은 예산: <span style='color:{status_color};'>{remaining:,}</span>"
+            f"남은 예산: <span style='color:{status_color};'>{remaining:,}</span> | 수입: {income:,}"
         )
+        if any(table.isRowHidden(r) for table in (self.expense_table, self.income_table) for r in range(table.rowCount())):
+            text += (f" <span style='color:#5f6368; font-weight:normal;'>| 🔍 검색 결과: 지출 {sum_table(self.expense_table, 6, True):,}"
+                     f" · 수입 {sum_table(self.income_table, 4, True):,}</span>")
+        self.summary_label.setText(text)
 
     def resolve_category_id(self, etype, p, s):
         db_type = "소비" if etype == "지출" else "소득"
