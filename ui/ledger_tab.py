@@ -1,3 +1,4 @@
+import re
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QPushButton, QLabel, QMessageBox, 
                              QHeaderView, QFrame, QComboBox, QDateEdit, QStyledItemDelegate, QLineEdit,
@@ -9,6 +10,13 @@ from database import (get_ledger_entries, add_ledger_entry, update_ledger_entry,
 
 BUDGET_OVER_COLOR = "#d93025"
 BUDGET_OK_COLOR = "#188038"
+
+AMOUNT_PATTERN = re.compile(r"-?\d{1,15}")
+
+def parse_amount(text):
+    """'12,000', '12000원', '₩12,000', '-5000'(환불) -> int, 그 외 None"""
+    cleaned = re.sub(r"[,\s원₩]", "", text or "")
+    return int(cleaned) if AMOUNT_PATTERN.fullmatch(cleaned) else None
 
 class NumericTableWidgetItem(QTableWidgetItem):
     """Custom TableWidgetItem that sorts numerically instead of alphabetically."""
@@ -145,13 +153,18 @@ class LedgerSpreadsheet(QTableWidget):
         
         amt_col = 6 if self.entry_type == "지출" else 4
         if col == amt_col:
+            amount = parse_amount(item.text())
             self.blockSignals(True)
-            text = item.text().replace(',', '').strip()
-            if text.isdigit():
-                item.setText(format(int(text), ','))
+            if amount is None:
+                # 잘못된 입력은 0으로 바꾸지 않고 직전 값으로 되돌림
+                item.setText(item.data(Qt.ItemDataRole.UserRole) or "0")
             else:
-                item.setText("0")
+                item.setText(format(amount, ','))
+                item.setData(Qt.ItemDataRole.UserRole, item.text())
             self.blockSignals(False)
+            if amount is None:
+                QMessageBox.warning(self, "금액 입력", "금액은 숫자로 입력해 주세요.\n환불·취소는 -5000 처럼 마이너스로 입력할 수 있습니다.")
+                return
 
         self.set_save_status(row, False)
 
@@ -460,6 +473,7 @@ class LedgerTab(QWidget):
             table.setItem(row, col, DateTableWidgetItem(val or ""))
         elif col == amt_col:
             item = NumericTableWidgetItem(val or "0")
+            item.setData(Qt.ItemDataRole.UserRole, val or "0")
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             table.setItem(row, col, item)
         else:
