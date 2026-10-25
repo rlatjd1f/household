@@ -19,7 +19,6 @@ from ui.settings_tab import SettingsTab
 from ui.budget_tab import BudgetTab
 from ui.asset_tab import AssetTab
 from ui.ledger_tab import LedgerTab
-from ui.report_tab import MonthlyReportTab, YearlyReportTab
 from updater import check_for_update, install_update
 from version import APP_VERSION
 
@@ -334,28 +333,53 @@ class AppWindow(QMainWindow):
     def start_page_loading(self):
         self.pages = {}
         self.month_pages = {}
-        self.loading_steps = [
-            ("설정 정보를 불러오는 중입니다...", lambda: self.add_named_page("settings", SettingsTab(hid=self.hid))),
-            ("예산 정보를 불러오는 중입니다...", lambda: self.add_named_page("budget", BudgetTab(hid=self.hid))),
-            ("자산 정보를 불러오는 중입니다...", lambda: self.add_named_page("asset", AssetTab(hid=self.hid))),
-            ("월별 리포트를 불러오는 중입니다...", lambda: self.add_named_page("report_monthly", MonthlyReportTab(hid=self.hid))),
-            ("연도별 리포트를 불러오는 중입니다...", lambda: self.add_named_page("report_yearly", YearlyReportTab(hid=self.hid))),
-        ]
-        for month in range(1, 13):
-            self.loading_steps.append(
-                (f"{month}월 가계부를 불러오는 중입니다...", lambda m=month: self.add_month_page(m))
-            )
+        self.current_year = self.year_spin.value()
+        # 화면 자리만 먼저 만들고 실제 화면은 처음 열 때 생성 (시작 속도 개선)
+        # 순서: 설정, 예산, 자산, 월별 리포트, 연도별 리포트, 1~12월 가계부
+        self.page_factories = [
+            ("settings", lambda: SettingsTab(hid=self.hid)),
+            ("budget", lambda: BudgetTab(hid=self.hid)),
+            ("asset", lambda: AssetTab(hid=self.hid)),
+            ("report_monthly", self.create_monthly_report),
+            ("report_yearly", self.create_yearly_report),
+        ] + [(month, lambda m=month: LedgerTab(hid=self.hid, month=m, year=self.current_year)) for month in range(1, 13)]
+        self.page_slots = []
+        for _ in self.page_factories:
+            placeholder = QWidget()
+            self.content_stack.addWidget(placeholder)
+            self.page_slots.append(placeholder)
+        self.loading_steps = [("설정 정보를 불러오는 중입니다...", lambda: self.ensure_page(0))]
         self.loading_step_index = 0
         self.load_next_page_step()
 
-    def add_named_page(self, key, widget):
-        self.pages[key] = widget
-        self.content_stack.addWidget(widget)
+    def create_monthly_report(self):
+        # matplotlib 로딩이 느려 리포트를 처음 열 때 불러옴
+        from ui.report_tab import MonthlyReportTab
+        return MonthlyReportTab(hid=self.hid, year=self.current_year)
 
-    def add_month_page(self, month):
-        widget = LedgerTab(hid=self.hid, month=month)
-        self.month_pages[month] = widget
-        self.content_stack.addWidget(widget)
+    def create_yearly_report(self):
+        from ui.report_tab import YearlyReportTab
+        return YearlyReportTab(hid=self.hid, year=self.current_year)
+
+    def ensure_page(self, index):
+        """index 위치의 화면을 아직 만들지 않았으면 만들고 (화면, 새로 만들었는지)를 반환"""
+        slot = self.page_slots[index]
+        key, factory = self.page_factories[index]
+        if key in self.pages or key in self.month_pages:
+            return slot, False
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            widget = factory()
+        finally:
+            QApplication.restoreOverrideCursor()
+        stack_index = self.content_stack.indexOf(slot)
+        self.content_stack.insertWidget(stack_index, widget)
+        self.content_stack.removeWidget(slot)
+        slot.deleteLater()
+        self.page_slots[index] = widget
+        if isinstance(key, int): self.month_pages[key] = widget
+        else: self.pages[key] = widget
+        return widget, True
 
     def load_next_page_step(self):
         if self.loading_step_index >= len(self.loading_steps):
@@ -363,13 +387,13 @@ class AppWindow(QMainWindow):
             return
         message, _ = self.loading_steps[self.loading_step_index]
         self.loading_message.setText(message)
-        QTimer.singleShot(10, self.run_current_page_step)
+        QTimer.singleShot(0, self.run_current_page_step)
 
     def run_current_page_step(self):
         _, loader = self.loading_steps[self.loading_step_index]
         loader()
         self.loading_step_index += 1
-        QTimer.singleShot(10, self.load_next_page_step)
+        QTimer.singleShot(0, self.load_next_page_step)
 
     def finish_page_loading(self):
         self.loading_timer.stop()
@@ -399,15 +423,16 @@ class AppWindow(QMainWindow):
         current = self.content_stack.currentWidget()
         if not self.confirm_discard_unsaved():
             self.year_spin.blockSignals(True)
-            self.year_spin.setValue(self.month_pages[1].year)
+            self.year_spin.setValue(self.current_year)
             self.year_spin.blockSignals(False)
             return
-        # 보이지 않는 페이지는 이동할 때 handle_navigation에서 새로 불러옴
+        self.current_year = year
+        # 이미 만든 화면만 연도를 바꾸고, 보이지 않는 화면은 이동할 때 handle_navigation에서 새로 불러옴
         for widget in self.month_pages.values():
             widget.set_year(year, refresh=widget is current)
         for key in ("report_monthly", "report_yearly"):
-            widget = self.pages[key]
-            widget.set_year(year, refresh=widget is current)
+            widget = self.pages.get(key)
+            if widget: widget.set_year(year, refresh=widget is current)
 
     def handle_excel_import(self):
         from PyQt6.QtWidgets import QFileDialog; from ui.migration_util import import_from_excel
@@ -458,16 +483,18 @@ class AppWindow(QMainWindow):
         if 0 <= row <= 4: idx = row
         elif 6 <= row <= 17: idx = 5 + (row - 6)
         if idx != -1:
-            if idx != self.content_stack.currentIndex() and not self.confirm_discard_unsaved():
+            if self.page_slots[idx] is not self.content_stack.currentWidget() and not self.confirm_discard_unsaved():
                 self.sidebar.blockSignals(True)
                 self.sidebar.setCurrentRow(self.current_sidebar_row)
                 self.sidebar.blockSignals(False)
                 return
             self.current_sidebar_row = row
-            self.content_stack.setCurrentIndex(idx)
-            w = self.content_stack.currentWidget()
-            if hasattr(w, 'load_data'): w.load_data()
-            if hasattr(w, 'refresh_data'): w.refresh_data()
+            w, created = self.ensure_page(idx)
+            self.content_stack.setCurrentWidget(w)
+            # 방금 만든 화면은 생성할 때 이미 데이터를 불러왔으므로 다시 불러오지 않음
+            if not created:
+                if hasattr(w, 'load_data'): w.load_data()
+                if hasattr(w, 'refresh_data'): w.refresh_data()
 
 class MainController:
     def __init__(self):

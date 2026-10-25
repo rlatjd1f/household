@@ -17,12 +17,24 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # 앱에서 쓰지 않는 Tk (Tcl/Tk 데이터 파일이 많아 단일 exe 시작 시 압축 해제가 느려짐)
+    excludes=['tkinter', '_tkinter', 'PIL.ImageTk'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+if sys.platform == 'win32':
+    # 단일 exe는 실행할 때마다 전체를 임시 폴더에 풀기 때문에, 사용하지 않는 대용량 파일을 빼서 시작 속도를 줄임
+    # (소프트웨어 OpenGL, PDF 이미지 플러그인, AVIF 이미지, Qt 번역 파일, macOS 아이콘)
+    def _is_unused(dest):
+        d = dest.replace('\\', '/').lower()
+        return (d.endswith('opengl32sw.dll') or d.endswith('qt6pdf.dll') or 'imageformats/qpdf' in d
+                or '/_avif' in d or 'pyqt6/qt6/translations/' in d or d.endswith('app.icns'))
+    a.binaries = [b for b in a.binaries if not _is_unused(b[0])]
+    a.datas = [d for d in a.datas if not _is_unused(d[0])]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 if sys.platform == 'darwin':

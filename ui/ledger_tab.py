@@ -322,11 +322,11 @@ class LedgerSpreadsheet(QTableWidget):
             return 0
 
 class LedgerTab(QWidget):
-    def __init__(self, hid=None, month=1):
+    def __init__(self, hid=None, month=1, year=None):
         super().__init__()
         self.hid = hid
         self.month = month
-        self.year = QDate.currentDate().year()
+        self.year = year or QDate.currentDate().year()
         self.category_color_map = {}
         self.category_cache = {}
         self.init_ui()
@@ -509,13 +509,14 @@ class LedgerTab(QWidget):
                 if bg_color and bg_color.isValid():
                     text = text_color.name() if text_color else "#202124"
                     widget.setStyleSheet(f"QComboBox {{ background-color: {color}; color: {text}; }}")
-                else:
+                elif widget.styleSheet():
+                    # setStyleSheet는 위젯 스타일을 다시 계산해 느리므로 색을 지울 때만 호출
                     widget.setStyleSheet("")
             elif isinstance(widget, QPushButton) and widget.objectName() == "SaveBtn":
                 if bg_color and bg_color.isValid():
                     text = text_color.name() if text_color else "#202124"
                     widget.setStyleSheet(f"background-color: {color}; color: {text};")
-                else:
+                elif widget.styleSheet():
                     widget.setStyleSheet("")
 
     def apply_row_color_from_values(self, table, row):

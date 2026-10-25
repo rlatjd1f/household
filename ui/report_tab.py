@@ -52,10 +52,10 @@ class ReportSection(QFrame):
                 child.widget().deleteLater()
 
 class MonthlyReportTab(QWidget):
-    def __init__(self, hid=None):
+    def __init__(self, hid=None, year=None):
         super().__init__()
         self.hid = hid
-        self.year = datetime.datetime.now().year
+        self.year = year or datetime.datetime.now().year
         self.month = self.default_month()
         self.month_buttons = []
         self.init_ui()
@@ -277,9 +277,9 @@ class MonthlyReportTab(QWidget):
         self.insight_text.setHtml(html)
 
 class YearlyReportTab(QWidget):
-    def __init__(self, hid=None):
+    def __init__(self, hid=None, year=None):
         super().__init__()
-        self.hid = hid; self.year = datetime.datetime.now().year
+        self.hid = hid; self.year = year or datetime.datetime.now().year
         self.init_ui(); self.load_data()
 
     def set_year(self, year, refresh=True):
