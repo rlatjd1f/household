@@ -388,6 +388,22 @@ def get_assets(hid):
     conn.close()
     return rows
 
+def update_asset(asset_id, name, initial_balance):
+    """자산명과 기초 잔액 수정. 이름이 겹치면 False"""
+    conn = get_db_connection()
+    try:
+        with conn:
+            # 현재 잔액은 기초 잔액에서 바뀐 만큼 함께 조정
+            conn.execute(
+                "UPDATE assets SET asset_name = ?, current_balance = current_balance + (? - initial_balance), initial_balance = ? WHERE id = ?",
+                (name, initial_balance, initial_balance, asset_id)
+            )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
 def delete_asset(asset_id):
     conn = get_db_connection()
     cursor = conn.cursor()
