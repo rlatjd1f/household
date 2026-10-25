@@ -1,11 +1,11 @@
+import hashlib
 import json
 import os
-import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +20,7 @@ class UpdateInfo:
     asset_name: str
     download_url: str
     release_url: str
+    sha256: str = ""
 
 
 def normalize_version(version):
@@ -81,8 +82,15 @@ def check_for_update(current_version):
                 asset_name=asset_name,
                 download_url=asset["browser_download_url"],
                 release_url=release.get("html_url", ""),
+                sha256=parse_sha256_digest(asset.get("digest")),
             )
     return None
+
+
+def parse_sha256_digest(digest):
+    if digest and digest.startswith("sha256:"):
+        return digest.split(":", 1)[1].lower()
+    return ""
 
 
 def download_asset(update_info, progress_callback=None):
@@ -97,12 +105,14 @@ def download_asset(update_info, progress_callback=None):
     with urllib.request.urlopen(request, timeout=60) as response:
         total_size = int(response.headers.get("Content-Length") or 0)
         downloaded_size = 0
+        hasher = hashlib.sha256()
         with target_path.open("wb") as output:
             while True:
                 chunk = response.read(1024 * 512)
                 if not chunk:
                     break
                 output.write(chunk)
+                hasher.update(chunk)
                 downloaded_size += len(chunk)
                 if progress_callback and total_size:
                     downloaded_mb = downloaded_size // 1024 // 1024
@@ -111,6 +121,10 @@ def download_asset(update_info, progress_callback=None):
                         f"업데이트 파일을 다운로드하고 있습니다. ({downloaded_mb}MB / {total_mb}MB)",
                         min(99, int(downloaded_size * 100 / total_size)),
                     )
+    # GitHub이 제공하는 SHA-256 digest가 있으면 다운로드 파일 무결성 확인
+    if update_info.sha256 and hasher.hexdigest() != update_info.sha256:
+        target_path.unlink(missing_ok=True)
+        raise RuntimeError("다운로드한 업데이트 파일의 무결성 검증에 실패했습니다.")
     if progress_callback:
         progress_callback("다운로드가 완료되었습니다. 업데이트를 준비하고 있습니다.", 100)
     return target_path
@@ -211,35 +225,48 @@ def get_current_app_bundle():
     for parent in [executable, *executable.parents]:
         if parent.suffix == ".app":
             return parent
-    raise RuntimeError("?? macOS app bundle ??? ?? ?????.")
+    raise RuntimeError("현재 macOS 앱 번들 경로를 찾을 수 없습니다.")
 
 
 def launch_macos_updater(downloaded_path):
     app_bundle = get_current_app_bundle()
     update_dir = downloaded_path.parent / "extracted"
-    with zipfile.ZipFile(downloaded_path) as zip_file:
-        zip_file.extractall(update_dir)
+    # zipfile은 실행 권한과 심볼릭 링크를 보존하지 않으므로 ditto로 압축 해제
+    subprocess.run(["ditto", "-x", "-k", str(downloaded_path), str(update_dir)], check=True)
 
     new_app = update_dir / app_bundle.name
     if not new_app.exists():
         candidates = list(update_dir.glob("*.app"))
         if not candidates:
-            raise RuntimeError("???? ????? app bundle? ?? ?????.")
+            raise RuntimeError("업데이트 패키지에서 앱 번들을 찾을 수 없습니다.")
         new_app = candidates[0]
 
+    staged_app = app_bundle.with_name(app_bundle.name + ".new")
+    backup_app = app_bundle.with_name(app_bundle.name + ".old")
+    log_path = get_update_log_path()
+    q = shlex.quote
     script_path = downloaded_path.with_suffix(".sh")
     script_path.write_text(
         "\n".join(
             [
                 "#!/bin/sh",
-                "sleep 2",
-                f'rm -rf "{app_bundle}"',
-                f'ditto "{new_app}" "{app_bundle}"',
-                f'open "{app_bundle}"',
-                f'rm -rf "{downloaded_path.parent}"',
+                f"LOG={q(str(log_path))}",
+                'log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" >> "$LOG"; }',
+                f"log {q(f'updater started. pid={os.getpid()} target={app_bundle}')}",
+                f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.5; done",
+                f"rm -rf {q(str(staged_app))} {q(str(backup_app))}",
+                f"if ! ditto {q(str(new_app))} {q(str(staged_app))}; then log 'copy failed'; exit 1; fi",
+                f"if ! mv {q(str(app_bundle))} {q(str(backup_app))}; then log 'backup failed'; rm -rf {q(str(staged_app))}; exit 1; fi",
+                f"if ! mv {q(str(staged_app))} {q(str(app_bundle))}; then",
+                f"  log 'swap failed, restoring'; mv {q(str(backup_app))} {q(str(app_bundle))}; exit 1",
+                "fi",
+                f"rm -rf {q(str(backup_app))}",
+                "log 'update applied'",
+                f"open {q(str(app_bundle))}",
+                f"rm -rf {q(str(downloaded_path.parent))}",
             ]
         ),
         encoding="utf-8",
     )
     os.chmod(script_path, 0o755)
-    subprocess.Popen(["/bin/sh", str(script_path)])
+    subprocess.Popen(["/bin/sh", str(script_path)], start_new_session=True)
